@@ -6,22 +6,22 @@
                     ncores=NULL,all_args=NULL,
                     restrict_ind_high=NULL,
                     restrict_ind_low=NULL,
+                    tol_rel_obj=NULL,
                     model_type=NULL,
                     use_groups=NULL,
                     fixtype=NULL,...) {
 
-  
   . <- NULL
   to_use <- stanmodels[['irt_standard_noid']]
   
   if(this_data$time_proc==4) {
-    tol_rel_obj <- .0001
-    eval_elbo <- 200
+    tol_rel_obj <- .001
+    eval_elbo <- 100
   } else {
-    tol_rel_obj <- .0001
     eval_elbo <- 100
   }
 
+  print("(First Step): Estimating model with variational inference to identify modes to constrain.")
   
   post_modes <- rstan::vb(object=to_use,data =this_data,
                           algorithm='meanfield',
@@ -147,7 +147,7 @@
     ideal_pts_high <- rstan::extract(post_modes,'L_tp1')[[1]] %>% apply(c(2,3),quantile,.99) %>% .[,new_order]
     ideal_pts_low <- ideal_pts_low*sign_flip
     ideal_pts_high <- ideal_pts_high*sign_flip
-    
+
     # now pull the lowest low and highest high
     ideal_pts_low <- apply(ideal_pts_low,2,function(c) c[which(c==max(c))])
     ideal_pts_high <- apply(ideal_pts_high,2,function(c) c[which(c==min(c))])
@@ -157,8 +157,9 @@
     
     if(this_data$time_proc %in% c(2,3)) {
       # this is just additional for these models
-      col_high <- which(ideal_pts_mean==max(ideal_pts_mean),arr.ind=T)
-      col_low <- which(ideal_pts_mean==min(ideal_pts_mean),arr.ind=T)
+      col_high <- which(ideal_pts_mean==max(ideal_pts_mean),arr.ind=T)[1,,drop=F]
+      col_low <- which(ideal_pts_mean==min(ideal_pts_mean),arr.ind=T)[1,,drop=F]
+    
       restrict_mean_ind_high_max <- col_high
       restrict_mean_ind_high_min <- c(which(ideal_pts_mean[,col_high[,2]]==min(ideal_pts_mean[,col_high[,2]])),
                                       col_high[,2])
@@ -179,13 +180,13 @@
                                        col_low[,2])
       } else {
         # just constrain the lowest one that we fixed
-        restrict_mean_ind_high_max <- c(which(ideal_pts_mean[,ncol(ideal_pts_mean)]==max(ideal_pts_mean[,ncol(ideal_pts_mean)])),
+        restrict_mean_ind_high_max <- c(which(ideal_pts_mean[,ncol(ideal_pts_mean)]==max(ideal_pts_mean[,ncol(ideal_pts_mean)]))[1],
                                ncol(ideal_pts_mean))
-        restrict_mean_ind_high_min <- c(which(ideal_pts_mean[,ncol(ideal_pts_mean)]==min(ideal_pts_mean[,ncol(ideal_pts_mean)])),
+        restrict_mean_ind_high_min <- c(which(ideal_pts_mean[,ncol(ideal_pts_mean)]==min(ideal_pts_mean[,ncol(ideal_pts_mean)]))[1],
                                         ncol(ideal_pts_mean))
-        restrict_mean_ind_low_min <- c(which(ideal_pts_mean[,ncol(ideal_pts_mean)-1]==min(ideal_pts_mean[,ncol(ideal_pts_mean)-1])),
+        restrict_mean_ind_low_min <- c(which(ideal_pts_mean[,ncol(ideal_pts_mean)-1]==min(ideal_pts_mean[,ncol(ideal_pts_mean)-1]))[1],
                                     ncol(ideal_pts_mean)-1)
-        restrict_mean_ind_low_max <- c(which(ideal_pts_mean[,ncol(ideal_pts_mean)-1]==max(ideal_pts_mean[,ncol(ideal_pts_mean)-1])),
+        restrict_mean_ind_low_max <- c(which(ideal_pts_mean[,ncol(ideal_pts_mean)-1]==max(ideal_pts_mean[,ncol(ideal_pts_mean)-1]))[1],
                                        ncol(ideal_pts_mean)-1)
       }
       
@@ -578,6 +579,11 @@
       m_sd_optim <- optimize(f=rev_trans,
                              interval=c(0,m_sd_par[1]),
                           m_sd_par=m_sd_par)$objective
+      
+      if(m_sd_optim<0) {
+        # shouldn't happen, but just in case
+        m_sd_optim <- m_sd_par[1]/2
+      }
       
       if(restrict_var) {
         if(time_proc==4) {
@@ -1562,5 +1568,49 @@ return(as.vector(idx))
   return(list(a=c(params$a),
               b=c(params$b)))
   
+}
+
+#' Function to calculate IRFs
+#' @noRd
+.irf <- function( time=1,shock=1,
+                  adj_in=NULL,
+                  y_1=0,
+                  total_t=10,
+                  old_output=NULL) {
+  
+  # set up the exogenous shock
+  # unless the shock comes from an exogenous covariate beta_x
+  if(time==1) {
+    x_1 <- shock
+  } else {
+    x_1 <- 0
+  }
+  
+  print(paste0('Now processing time point ',time))
+  
+  # Calculate current values of y and x given posterior uncertainty
+  
+  output <- data_frame(y_shock= adj_in*y_1 + x_1,
+                       time=time,
+                       iter=1:length(adj_in))
+  
+  
+  if(!is.null(old_output)) {
+    new_output <- bind_rows(old_output,output)
+  } else {
+    new_output <- output
+  }
+  
+  # run function recursively until time limit is reached
+  
+  if(time<total_t) {
+    .irf(time=time+1,
+         adj_in=adj_in,
+         y_1=output$y_shock,
+         total_t=total_t,
+         old_output=new_output)
+  } else {
+    return(new_output)  
+  }
 }
 

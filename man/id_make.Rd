@@ -7,7 +7,7 @@
 id_make(score_data = NULL, outcome = "outcome",
   person_id = "person_id", item_id = "item_id", time_id = "time_id",
   group_id = "group_id", simul_data = NULL, person_cov = NULL,
-  group_cov = NULL, item_cov = NULL, item_cov_miss = NULL,
+  item_cov = NULL, item_cov_miss = NULL, remove_cov_int = FALSE,
   miss_val = NA, high_val = NULL, low_val = NULL,
   middle_val = NULL, unbounded = FALSE, exclude_level = NA,
   simulation = FALSE)
@@ -36,10 +36,6 @@ Optional, default is \code{'group_id'}. Should be integer, character or factor.}
 \item{person_cov}{A one-sided formula that specifies the covariates
 in \code{score_data} that will be used to hierarchically model the person/legislator ideal points}
 
-\item{group_cov}{A one-sided formula that specifies the covariates
-in \code{score_data} that will be used to hierarchically model the person/legislator ideal points 
-at the group level. Use this in place of \code{person_cov} if you intend to run a group-level model.}
-
 \item{item_cov}{A one-sided formula that specifies the covariates
 in \code{score_data} that will be used to hierarchically model the 
 item/bill discrimination parameters for the regular model}
@@ -47,6 +43,12 @@ item/bill discrimination parameters for the regular model}
 \item{item_cov_miss}{A one-sided formula that specifies the covariates
 in the dataset that will be used to hierarchically model the item/bill discrimination parameters for the
 missing data model.}
+
+\item{remove_cov_int}{Whether to remove constituent terms from hierarchical covariates that 
+interact covariates with IDs like \code{person_id} or \code{item_id}. Set to \code{TRUE} if
+including these constituent terms would cause multi-collinearity with other terms in the model
+(such as running a group-level model with a group-level interaction or a person-level model
+with a person-level interaction).}
 
 \item{miss_val}{The value (numeric or character) that indicate missing data/absences in the data. 
 If missing data is coded as \code{NA}, 
@@ -86,7 +88,8 @@ function.
 }
 \details{
 This function can accept either a \code{rollcall} data object from package
-\code{pscl} or a long data frame where one row equals one item-person (bill-legislator)
+\code{pscl} or 
+a long data frame where one row equals one item-person (bill-legislator)
 observation with associated outcome. The preferred method is the long data frame 
 as passing a long data frame permits
 the inclusion of a wide range of covariates in the model, such as person-varying and item-varying 
@@ -114,16 +117,6 @@ missing. If you do specify \code{miss_val} and you also have \code{NA} in your d
 coded as \code{miss_val} as missing data that should be modeled and will treat the \code{NA}
 data as ignorable missing data that will be removed (list-wise deletion) before estimating a
 model.
-
-To run a time-varying model, you need to include the name of a column with dates (or integers) that is passed 
-to the \code{time_id} option.
-
-If the outcome is unbounded i.e. a continuous or an unbounded 
-discrete variable like Poisson, simply set \code{unbounded} to \code{TRUE}. You can ignore the
-options that specify which values should be \code{high_val} or \code{low_val}. You can either specify
-a particular value as missing using \code{miss_val}, or all 
-missing values (\code{NA}) will be recoded to a specific value out of the range of the outcome to use
-for modeling the missingness.
 }
 \examples{
 # You can either use a pscl rollcall object or a vote/score matrix 

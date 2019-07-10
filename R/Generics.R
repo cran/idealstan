@@ -12,10 +12,9 @@ setClass('idealdata',
                     group_varying='logical',
                     person_vals='ANY',
                     item_data='data.frame',
-                    person_cov='array',
-                    item_cov='matrix',
-                    item_cov_miss='matrix',
-                    group_cov='array',
+                    person_cov='character',
+                    item_cov='character',
+                    item_cov_miss='character',
                     time='ANY',
                     exog_data='vector',
                     time_vals='vector',
@@ -162,9 +161,11 @@ setMethod('sample_model',signature(object='idealdata'),
               ncores <- 1
             }
             if(use_vb==FALSE) {
+              print("Estimating model with full Stan MCMC sampler.")
               out_model <- sampling(object@stanmodel,data=this_data,chains=nchains,iter=niters,cores=ncores,
                                     warmup=warmup,
                                     init=init_vals,
+                                    refresh=this_data$id_refresh,
                                     ...)
             } else {
               if(is.null(tol_rel_obj)) {
@@ -174,15 +175,16 @@ setMethod('sample_model',signature(object='idealdata'),
               if(this_data$time_proc==4) {
                 # increase the precision of the gradient ascent when 
                 # using the GP as it is more complicated
-                elbo_samples <- 200
-                grad_samples <- 2
-                eval_elbo <- 200
+                elbo_samples <- 100
+                grad_samples <- 1
+                eval_elbo <- 100
                 #tol_rel_obj <- .0005
               } else {
                 elbo_samples <- 100
                 grad_samples <- 1
                 eval_elbo <- 100
               }
+              print("Estimating model with variational inference (approximation of true posterior).")
               out_model <- vb(object@stanmodel,data=this_data,
                               tol_rel_obj=tol_rel_obj,
                               iter=20000,
@@ -190,6 +192,7 @@ setMethod('sample_model',signature(object='idealdata'),
                               elbo_samples=elbo_samples,
                               grad_samples=grad_samples,
                               eval_elbo=eval_elbo,
+                              refresh=this_data$id_refresh,
                               ...)
             }
             outobj <- new('idealstan',
@@ -208,6 +211,7 @@ setGeneric('id_model',
 setMethod('id_model',signature(object='idealdata'),
           function(object,fixtype='vb',model_type=NULL,this_data=NULL,nfix=10,
                    prior_fit=NULL,
+                   tol_rel_obj=NULL,
                    restrict_ind_high=NULL,
                    restrict_ind_low=NULL,
                    ncores=NULL,
@@ -218,6 +222,7 @@ setMethod('id_model',signature(object='idealdata'),
             run_id <- switch(fixtype,vb_full=.vb_fix,vb_partial=.vb_fix,constrained=.constrain_fix,
                              constrain=.constrain_fix,
                              prior_fit=.prior_fit)
+            
 
             object <- run_id(object=object,this_data=this_data,nfix=nfix,
                    restrict_ind_high=restrict_ind_high,
@@ -226,7 +231,8 @@ setMethod('id_model',signature(object='idealdata'),
                    model_type=model_type,
                    use_groups=use_groups,
                    fixtype=fixtype,
-                   prior_fit=prior_fit)
+                   prior_fit=prior_fit,
+                   tol_rel_obj=tol_rel_obj)
             
 
             return(object)
@@ -257,7 +263,7 @@ setMethod('summary',signature(object='idealstan'),
             
             options(tibble.print_max=1000,
                     tibble.print_min=100)
-            
+
 
             if(pars=='ideal_pts') {
               ideal_pts <- .prepare_legis_data(object,
@@ -362,9 +368,9 @@ setMethod('summary',signature(object='idealstan'),
                                   pars=param_name)
               
               # reset names of parameters
-              new_names <- switch(pars,person_cov=attributes(object@score_data@person_cov)$dimnames$colnames,
-                                  discrim_reg=attributes(object@score_data@item_cov)$dimnames$colnames,
-                                  discrim_abs=attributes(object@score_data@item_cov_miss)$dimnames$colnames)
+              new_names <- switch(pars,person_cov=object@score_data@person_cov,
+                                  discrim_reg=object@score_data@item_cov,
+                                  discrim_abs=object@score_data@item_cov_miss)
               
               attributes(to_sum)$dimnames$parameters <- new_names
               

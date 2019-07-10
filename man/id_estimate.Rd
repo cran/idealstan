@@ -11,12 +11,12 @@ id_estimate(idealdata = NULL, model_type = 2, inflate_zero = FALSE,
   restrict_ind_high = NULL, id_diff = 4, id_diff_high = 2,
   restrict_ind_low = NULL, fixtype = "vb_full", id_refresh = 0,
   prior_fit = NULL, warmup = floor(niters/2), ncores = 4,
-  use_groups = FALSE, discrim_reg_sd = 1, discrim_miss_sd = 1,
+  use_groups = FALSE, discrim_reg_sd = 2, discrim_miss_sd = 2,
   person_sd = 1, time_sd = 0.1, sample_stationary = FALSE,
   ar_sd = 2, diff_reg_sd = 1, diff_miss_sd = 1, restrict_sd = 0.01,
   restrict_mean = NULL, restrict_var = NULL,
   restrict_mean_val = NULL, restrict_mean_ind = NULL,
-  restrict_var_high = 0.1, tol_rel_obj = 1e-04, gp_sd_par = 0.025,
+  restrict_var_high = 0.1, tol_rel_obj = 0.001, gp_sd_par = 0.025,
   gp_num_diff = c(3, 0.01), gp_m_sd_par = c(0.3, 10),
   gp_min_length = 0, ...)
 }
@@ -141,7 +141,7 @@ model is a random-walk time-series). If left blank, either defaults to 0.1 or is
 identification model.}
 
 \item{tol_rel_obj}{If \code{use_vb} is \code{TRUE}, this parameter sets the stopping rule for the \code{vb} algorithm. 
-It's default is 0.0005. A stricter threshold will require the sampler to run longer but may yield a
+It's default is 0.001. A stricter threshold will require the sampler to run longer but may yield a
 better result in a difficult model with highly correlated parameters. Lowering the threshold should work fine for simpler
 models.}
 
@@ -223,7 +223,7 @@ bin_irt_2pl_abs_est <- id_estimate(bin_irt_2pl_abs_sim,
                        decreasing=TRUE,
                        index=TRUE)$ix[1],
                        restrict_ind_low = 
-                       sort(bin_irt_2pl_abs_sim@simul_data$true_person
+                       sort(bin_irt_2pl_abs_sim@simul_data$true_person,
                        decreasing=FALSE,
                        index=TRUE)$ix[1],
                        fixtype='vb_partial',
@@ -260,7 +260,7 @@ high_val='Yes',
 low_val='No',
 miss_val='Absent')
 
-sen_est <- id_estimate(senate_data,
+sen_est <- id_estimate(to_idealstan,
 model_type = 2,
 use_vb = TRUE,
 fixtype='vb_partial',

@@ -2,28 +2,80 @@
 % Please edit documentation in R/Plot.R
 \name{id_plot_cov}
 \alias{id_plot_cov}
-\title{Display Coefficient Plot of Hierarchical Covariates}
+\title{Marginal Effects Plot for Hierarchical Covariates}
 \usage{
-id_plot_cov(object, cov_type = "person_cov", filter_cov = NULL, ...)
+id_plot_cov(object, calc_varying = T, label_high = "Liberal",
+  label_low = "Conservative", cov_type = "person_cov",
+  pred_outcome = NULL, high_quantile = 0.95, low_quantile = 0.05,
+  filter_cov = NULL, new_cov_names = NULL, recalc_vals = NULL)
 }
 \arguments{
 \item{object}{A fitted \code{idealstan} object}
+
+\item{calc_varying}{Whether to marginalize covariate effects over 
+discrimination parameters to calculate a meaningful quantity for the effect of
+covariates on the latent scale (see vignette). Defaults to \code{TRUE}}
+
+\item{label_high}{What label to use on the plot for the high end of the 
+latent scale}
+
+\item{label_low}{What label to use on the plot for the low end of the 
+latent scale}
 
 \item{cov_type}{Either \code{'person_cov'} for person or group-level hierarchical parameters,
 \code{'discrim_reg_cov'} for bill/item discrimination parameters from regular (non-inflated) model, and 
 \code{'discrim_infl_cov'} for bill/item discrimination parameters from inflated model.}
 
+\item{pred_outcome}{For discrete models with more than 2 categories, 
+or binary models with missing data, which outcome to predict. This should 
+be a character value that matches what the outcome was coded as in the data
+passed to \code{\link{id_make}}.}
+
+\item{high_quantile}{The upper limit of the posterior density to use for 
+calculating credible intervals}
+
+\item{low_quantile}{The lower limit of the posterior density to use for
+calculating credible intervals}
+
 \item{filter_cov}{A character vector of coefficients from covariate plots to exclude from
 plotting (should be the names of coefficients as they appear in the plots)}
 
-\item{...}{Any additional parameters passed on to \code{\link[bayesplot]{mcmc_intervals}}}
+\item{new_cov_names}{A character vector of length equal to the number
+of covariates (plus 1 for the intercept) to change the default labels.
+To see the default labels, use the plot function with this option blank.
+The character vector should be of th form used by}
+
+\item{recalc_vals}{A character value of length three that can be used to create
+a new variable that is a sum of two other variables. The first two values of the
+character vector are the names of these parameters, while the third value is the name
+of the new combined variable. Note that if the parameters are renamed, the new names
+should be used in this option.}
 }
 \value{
 A \code{ggplot2} plot that can be further customized with \code{ggplot2} functions if need be.
 }
 \description{
-This function will pull the estimates of the hierarchical covariates (whether at the person or 
-item-discrimination level) and then plot them on a vertical coefficient plot. Names of 
-the parameters are taken from the levels of the factor if a categorical variable and the
-column names otherwise.
+This function will calculate marginal effects, or the first derivative
+of the IRT/ideal point model with respect to the hierarchical covariate,
+separately for the two poles of the latent variable. These two marginal
+effects permit the interpretation of the effect of the covariate on 
+with respect to either end of the latent variable.
+}
+\details{
+Because the marginal effects are always with respect to a given
+outcome/response, the outcome to be predicted must be specified 
+in \code{pred_outcome}. If it is not specified, the function
+will prompt you to select one of the outcome's values in the data.
+
+The ends of the latent variable can be specified via the 
+\code{label_low} and \code{label_high} options, which will use those
+labels in the ensuing plot.
+
+To exclude parameters from the plot, use the \code{filter_cov} option. 
+Note that the parameters must be specified using the underlying model 
+syntax (however they are labeled in the plot). You can also change
+the names of parameters using the \code{new_cov_names} option.
+
+Note that the function produces a \code{ggplot2} object, which can 
+be further modified with \code{ggplot2} functions.
 }
