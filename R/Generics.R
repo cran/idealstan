@@ -6,7 +6,7 @@
 #' @seealso \code{\link{id_make}} to create an \code{idealdata} object suitable for estimation with \code{id_estimate}.
 #' @export
 setClass('idealdata',
-         slots=list(score_matrix='data.frame',
+         slots=list(score_matrix='ANY',
                     person_data='data.frame',
                     group_vals='ANY',
                     group_varying='logical',
@@ -15,6 +15,9 @@ setClass('idealdata',
                     person_cov='character',
                     item_cov='character',
                     item_cov_miss='character',
+                    person_cov_formula="formula",
+                    item_cov_formula="formula",
+                    item_cov_miss_formula="formula",
                     time='ANY',
                     exog_data='vector',
                     time_vals='vector',
@@ -23,9 +26,15 @@ setClass('idealdata',
                     miss_val='ANY',
                     restrict_count='numeric',
                     restrict_data='list',
-                    stanmodel='stanmodel',
+                    stanmodel='ANY',
+                    stanmodel_map="ANY",
+                    #stanmodel_gpu='ANY',
+                    n_cats_rat="ANY",
+                    n_cats_grm="ANY",
+                    order_cats_rat="ANY",
+                    order_cats_grm="ANY",
                     param_fix='numeric',
-                    constraint_type='numeric',
+                    constraint_type='character',
                     restrict_vals='ANY',
                     subset_group='character',
                     subset_person='character',
@@ -45,7 +54,10 @@ setClass('idealdata',
                     restrict_mean_val='numeric',
                     restrict_mean_ind='numeric',
                     restrict_mean='logical',
-                    person_start='numeric'))
+                    person_start='numeric',
+                    Y_int="ANY",
+                    Y_cont="ANY",
+                    func_args="list"))
 
 
 #' Results of \code{\link{id_estimate}} function
@@ -57,14 +69,26 @@ setClass('idealdata',
 setClass('idealstan',
          slots=list(score_data='idealdata',
                     to_fix='list',
+                    summary="ANY",
                     model_type='numeric',
                     time_proc='numeric',
                     model_code='character',
                     test_model_code='character',
-                    stan_samples='stanfit',
-                    use_vb='logical',
+                    map_over_id="character",
+                    time_fix_sd="numeric",
+                    diagnostics="ANY",
+                    time_varying="ANY",
+                    restrict_var="logical",
+                    stan_samples='ANY',
+                    keep_param='ANY',
+                    use_method='character',
+                    orig_order="ANY",
                     use_groups='logical',
-                    simulation='logical'))
+                    this_data="ANY",
+                    simulation='logical',
+                    time_center_cutoff="numeric",
+                    remove_nas="ANY",
+                    eval_data_args="list"))
 
 setGeneric('subset_ideal',signature='object',
            function(object,...) standardGeneric('subset_ideal'))
@@ -78,13 +102,13 @@ setMethod('subset_ideal',signature(object='idealdata'),
             x <- object@score_matrix
             parliament <- object@person_data
             
-            if(use_subset==TRUE & !is.null(subset_group)) {
+            if(use_subset && !is.null(subset_group)) {
               if(!all(subset_group %in% parliament$group)) stop('The specified parliament bloc/party must be in the list of blocs/parties in the legislature data.')
               x <- x[parliament$group %in% subset_group,]
               
               object@subset_group <- subset_group
             } 
-            if(use_subset==TRUE & !is.null(subset_person)) {
+            if(use_subset && !is.null(subset_person)) {
               if(!all(subset_person %in% parliament$person.names[parliament$group%in% subset_group])) {
                 stop('The legislators to subset must be members of the subsetted bloc as well.')
               }
@@ -92,7 +116,7 @@ setMethod('subset_ideal',signature(object='idealdata'),
               object@subset_person <- subset_person
             }
             
-            if(sample_it==TRUE) {
+            if(sample_it) {
               object@to_sample <- sample(1:nrow(x),sample_size)
               x <- x[object@to_sample,]
             }
@@ -136,70 +160,354 @@ setGeneric('sample_model',signature='object',
 
 setMethod('sample_model',signature(object='idealdata'),
           function(object,nchains=4,niters=2000,warmup=floor(niters/2),ncores=NULL,
-                   to_use=to_use,this_data=this_data,use_vb=FALSE,
-                   tol_rel_obj=NULL,...) {
-
+                   to_use=to_use,this_data=this_data,use_method="mcmc",
+                   within_chain=NULL,
+                   keep_param=NULL,
+                   save_files=NULL,
+                   init_pathfinder=TRUE,
+                   seed=NULL,
+                   ...) {
+            
+            # need init values for pathfinder & other algos that work
             
             init_vals <- lapply(1:nchains,.init_stan,
-                                num_legis=this_data$num_legis,
-                                restrict_sd=this_data$restrict_sd,
-                                person_sd=this_data$legis_sd,
-                                diff_high=this_data$diff_high,
-                                T=this_data$T,
-                                time_proc=this_data$time_proc,
-                                m_sd_par=this_data$m_sd_par,
-                                time_range=mean(diff(this_data$time_ind)),
-                                num_diff=this_data$num_diff,
-                                restrict_var=this_data$restrict_var,
-                                restrict_var_high=this_data$restrict_var_high,
-                                time_sd=this_data$time_sd,
-                                use_ar=this_data$use_ar,
-                                person_start=object@person_start,
-                                actual=TRUE)
+                                this_data=this_data)
+
+            init_vals_orig <- lapply(1:nchains,.init_stan,
+                                     this_data=this_data)
+            
+            if(init_pathfinder) {
+              
+              # try pathfinder first, if that fails try laplace
+              # turn off debug mode
+              
+              message("Running pathfinder to find starting values")
+              
+              debug_orig <- this_data$debug_mode
+              
+              this_data$debug_mode <- 0
+              
+              init_vals <- try(object@stanmodel_map$pathfinder(data=this_data,
+                                          refresh=this_data$id_refresh,
+                                          num_threads=ncores,
+                                          num_paths=1,
+                                          single_path_draws = 1000,
+                                          history_size=25,
+                                          init=init_vals_orig[1],
+                                          psis_resample=FALSE,
+                                          seed=seed))
+              
+              # init_vals <- try(object@stanmodel_map$laplace(data=this_data,
+              #                                               refresh=0,threads=ncores,
+              #                                               draws=1000,
+              #                                               init=init_vals_orig[1]))
+
+              # if fitting fails, we won't get variance in the draws
+              
+              c1 <- init_vals$draws()
+              
+              if(is.null(c1) || sd(init_vals$draws()[,1])==0) {
+                
+                message("Pathfinder failed; attempting without PSIS resampling.")
+                
+                init_vals <- try(object@stanmodel_map$laplace(data=this_data,
+                                                          refresh=0,threads=ncores,
+                                                          draws=1000,
+                                                          init=init_vals_orig[1],
+                                                          seed=seed))
+                
+              }
+              
+              this_data$debug_mode <- debug_orig
+              
+              # manually extract init values and check for good inits
+              # return inits as list
+              
+              draws_init <- process_init_pathfinder(init_vals,num_procs=nchains)
+
+              # check for very high/low for discrimination parameters
+              # that might lead to overflow/underflow/log(0) errors
+              # on init
+
+              draws_init <- lapply(draws_init, function(td) {
+
+                if(any(td$sigma_reg_free>0.9999)) {
+
+                  td$sigma_reg_free[td$sigma_reg_free> 0.9999] <- td$sigma_reg_free[td$sigma_reg_free > 0.9999] - 0.001
+
+                }
+
+                if(any(td$sigma_reg_free < -0.9999)) {
+
+                  td$sigma_reg_free[td$sigma_reg_free < -0.9999] <- td$sigma_reg_free[td$sigma_reg_free < -0.9999] + 0.001
+
+                }
+                
+                if("sigma_abs_free" %in% names(td)) {
+                  
+                  if(any(td$sigma_abs_free>0.9999)) {
+                    
+                    td$sigma_reg_free[td$sigma_reg_free> 0.9999] <- td$sigma_reg_free[td$sigma_reg_free > 0.9999] - 0.001
+                    
+                  }
+                  
+                  if(any(td$sigma_abs_free < -0.9999)) {
+                    
+                    td$sigma_reg_free[td$sigma_reg_free < -0.9999] <- td$sigma_reg_free[td$sigma_reg_free < -0.9999] + 0.001
+                    
+                  }
+                  
+                  
+                }
+
+                return(td)
+              })
+              
+              if(this_data$debug_mode>0) {
+                
+                saveRDS(draws_init, paste0("~/draws_init_",as.numeric(Sys.time()),".rds"))
+                
+              }
+              
+              # if it still doesn't work, do random inits
+              
+              c1 <- try(init_vals$draws())
+              
+              if(is.null(c1) || 'try-error' %in% class(c1) || sd(init_vals$draws()[,1])==0) {
+                
+                message("Both pathfinder and laplace algorithms failed to find starting values. Doing random inits.")
+                
+                init_vals <- lapply(1:nchains,.init_stan,
+                                    this_data=this_data)
+                
+              } else {
+
+                init_vals <- draws_init
+
+              }
+              
+            }
+            
+            if(!is.null(keep_param)) {
+              
+              # check for logical vectors
+              
+              check_type <- sapply(keep_param, is.logical)
+              
+              stopifnot("Please only use TRUE/FALSE values for keep parameter option"=check_type)
+              
+              keep_vars <- "lp__"
+              
+              if(!is.null(keep_param$person_vary)) {
+                
+                if(keep_param$person_vary) {
+                  
+                  if(this_data$time_proc==2) {
+                    
+                    if(this_data$S_type!=0) {
+                      keep_vars <- c(keep_vars,"L_tp1_var","time_var_free",
+                                     "L_full")
+                    } else {
+                      keep_vars <- c(keep_vars,"L_tp1","time_var_full","time_var_free",
+                                     "L_full")
+                      
+                    }
+
+                    
+                  } else if(this_data$time_proc==3) {
+                    
+                    if(this_data$S_type!=0) {
+                      keep_vars <- c(keep_vars,"L_tp1_var","time_var_free","L_AR1",
+                                     "L_full")
+                    } else {
+                      keep_vars <- c(keep_vars,"L_tp1","time_var_full","time_var_free",
+                                     "L_full","L_AR1")
+                      
+                    }
+                    
+                  } else if(this_data$time_proc==4) {
+                    
+                    if(this_data$S_type!=0) {
+                      
+                      keep_vars <- c(keep_vars,"L_tp1_var","time_var_free","L_AR1",
+                                     "time_var_gp_free","m_sd_free","gp_sd_free",
+                                     "L_full")
+                      
+                    } else {
+                      
+                      keep_vars <- c(keep_vars,"L_tp1","L_tp1_var","time_var_free","L_AR1","time_var_full",
+                                     "m_sd_full","m_sd_free","gp_sd_free",
+                                     "time_var_gp_free",
+                                     "L_full")
+                      
+                      
+                    }
+                  }
+                  
+                }
+                
+              } else if(!is.null(keep_param$person_int)) {
+                
+                # figure out which people to keep in the estimation
+                
+                if(keep_param$person_int && (is.null(keep_param$person_vary) || !keep_param$person_vary)) {
+                  
+                  keep_vars <- c(keep_vars,"L_full")
+                  
+                }
+                
+              } 
+              
+              if(!is.null(keep_param$item)) {
+                
+                if(keep_param$item) {
+                  
+                  keep_vars <- c(keep_vars,"sigma_reg_full","B_int_free")
+                  
+                }
+                
+              } 
+              
+              if(!is.null(keep_param$item_miss)) {
+                
+                if(keep_param$item_miss) {
+                  
+                  keep_vars <- c(keep_vars,"sigma_abs_free","A_int_free")
+                  
+                }
+                
+              } 
+              
+              if(!is.null(keep_param$extra)) {
+                
+                if(keep_param$extra) {
+                  
+                  if(object@person_cov!="personcov0") {
+                    
+                    keep_vars <- c(keep_vars,"legis_x")
+                    
+                  }
+                  
+                  if(object@item_cov!="itemcov0") {
+                    
+                    keep_vars <- c(keep_vars,"sigma_reg_x")
+                    
+                  }
+                  
+                  if(object@item_cov_miss!="itemcovmiss0") {
+                    
+                    keep_vars <- c(keep_vars,"sigma_abs_x")
+                    
+                  }
+                  
+                }
+                
+              }
+               
+            }
+
 
             if(is.null(ncores)) {
               ncores <- 1
             }
-            if(use_vb==FALSE) {
-              print("Estimating model with full Stan MCMC sampler.")
-              out_model <- sampling(object@stanmodel,data=this_data,chains=nchains,iter=niters,cores=ncores,
-                                    warmup=warmup,
-                                    init=init_vals,
-                                    refresh=this_data$id_refresh,
-                                    ...)
-            } else {
-              if(is.null(tol_rel_obj)) {
-                # set to this number for identification runs
-                tol_rel_obj <- 1e-02
-              }
-              if(this_data$time_proc==4) {
-                # increase the precision of the gradient ascent when 
-                # using the GP as it is more complicated
-                elbo_samples <- 100
-                grad_samples <- 1
-                eval_elbo <- 100
-                #tol_rel_obj <- .0005
-              } else {
-                elbo_samples <- 100
-                grad_samples <- 1
-                eval_elbo <- 100
-              }
-              print("Estimating model with variational inference (approximation of true posterior).")
-              out_model <- vb(object@stanmodel,data=this_data,
-                              tol_rel_obj=tol_rel_obj,
-                              iter=20000,
-                              init=init_vals[[1]],
-                              elbo_samples=elbo_samples,
-                              grad_samples=grad_samples,
-                              eval_elbo=eval_elbo,
+            if(use_method=="mcmc") {
+              message("Estimating model with full Stan MCMC sampler.")
+
+                # if(gpu) {
+                #   out_model <- object@stanmodel_gpu$sample(data=this_data,chains=nchains,iter_sampling=niters,
+                #                                            parallel_chains=nchains,
+                #                                            threads_per_chain=ifelse(floor(ncores/nchains)>0,floor(ncores/nchains),1),
+                #                                            iter_warmup=warmup,
+                #                                            init=init_vals,
+                #                                            output_dir=save_files,
+                #                                            refresh=this_data$id_refresh,
+                #                                            ...)
+                # } else {
+                  
+                  # give informative starting values a shot, if they fail then just do 
+                  # pure random
+              
+                  out_model <- try(object@stanmodel_map$sample(data=this_data,chains=nchains,iter_sampling=niters,
+                                                           parallel_chains=nchains,
+                                                           threads_per_chain=ifelse(floor(ncores/nchains)>0,floor(ncores/nchains),1),
+                                                           iter_warmup=warmup,
+                                                           init=init_vals,
+                                                           output_dir=save_files,
+                                                           refresh=this_data$id_refresh,
+                                                           seed=seed,
+                                                           ...))
+                  if('try-error' %in% class(out_model)) {
+                    
+                    message("Finding initialization with pathfinder/laplace failed, using random inits on (-2,2).")
+                    
+                    out_model <- try(object@stanmodel_map$sample(data=this_data,chains=nchains,iter_sampling=niters,
+                                                                 parallel_chains=nchains,
+                                                                 threads_per_chain=ifelse(floor(ncores/nchains)>0,floor(ncores/nchains),1),init=init_vals,
+                                                                 iter_warmup=warmup,
+                                                                 output_dir=save_files,
+                                                                 refresh=this_data$id_refresh,
+                                                                 ...))
+                    
+                  }
+                  
+                # }
+
+              } else if (use_method=="pathfinder") {
+                
+              message("Estimating model with Pathfinder for inference (approximation of true posterior).")
+              out_model <- object@stanmodel_map$pathfinder(data=this_data,
+                              draws=niters,
+                              init=init_vals,
+                              num_paths=nchains,num_threads=ncores,
                               refresh=this_data$id_refresh,
+                              seed=seed,
                               ...)
+              
+              } else if (use_method=="laplace") {
+              
+                out_model <- object@stanmodel_map$laplace(data=this_data,
+                                                             draws=niters,
+                                                             init=init_vals[1],
+                                                             threads=ncores,
+                                                             refresh=this_data$id_refresh,
+                                                             seed=seed,
+                                                             ...)
+                
             }
+            
             outobj <- new('idealstan',
                           score_data=object,
-                          model_code=object@stanmodel@model_code,
-                          stan_samples=out_model,
-                          use_vb=use_vb)
+                          model_code=object@stanmodel_map$code(),
+                          use_method=use_method)
+            
+            # add safe summaries
+            
+            # need to use keep_param to filter items/persons in case we need to
+            # remove some of them
+            
+            if(is.null(keep_param)) {
+              
+              keep_vars <- NULL
+              
+            }
+            
+            to_sum <- out_model$summary(variables=keep_vars,
+                                                  ~quantile(.x, probs = c(0.05, 0.95),na.rm=TRUE),
+                                                  rhat=rhat,~mean(.x,na.rm=TRUE),
+                                                  median=median,ess_bulk,ess_tail) 
+            
+            names(to_sum) <- c("variable","upper","lower","rhat",
+                               "mean","median","ess_bulk","ess_tail")
+            
+            to_sum <- select(to_sum,variable,lower,mean,median,upper,rhat,ess_bulk,ess_tail)
+            
+            outobj@summary <- to_sum
+            
+            if(!(use_method %in% c("pathfinder","laplace"))) outobj@diagnostics <- out_model$sampler_diagnostics()
+            
+            outobj@stan_samples <- out_model
+            
+            outobj@keep_param <- keep_param
             
             return(outobj)
           })
@@ -209,57 +517,168 @@ setGeneric('id_model',
            function(object,...) standardGeneric('id_model'))
 
 setMethod('id_model',signature(object='idealdata'),
-          function(object,fixtype='vb',model_type=NULL,this_data=NULL,nfix=10,
-                   prior_fit=NULL,
-                   tol_rel_obj=NULL,
+          function(object,fixtype='vb',model_type=NULL,this_data=NULL,
                    restrict_ind_high=NULL,
                    restrict_ind_low=NULL,
+                   num_restrict_high=NULL,
+                   num_restrict_low=NULL,
+                   fix_high=NULL,
+                   fix_low=NULL,
                    ncores=NULL,
+                   const_type=NULL,
                    use_groups=NULL) {
-
+            
             x <- object@score_matrix
             
-            run_id <- switch(fixtype,vb_full=.vb_fix,vb_partial=.vb_fix,constrained=.constrain_fix,
-                             constrain=.constrain_fix,
-                             prior_fit=.prior_fit)
-            
+            if(fixtype %in% c("prefix") && is.null(restrict_ind_high)) {
+              
+              message("Interactively selecting which items or persons to constrain as they were not pre-specified.")
+              
+              if(const_type=="persons") {
+                restrict_ind_high <- .select_const(object,
+                                                   const_type=const_type,
+                                                   multiple=FALSE,
+                                                   title="Select one person in your data to constrain their ideal point to high values of the latent scale.")$res
+                restrict_ind_low <- .select_const(object,
+                                                   const_type=const_type,
+                                                   multiple=FALSE,
+                                                   title="Select one person in your data to constrain their ideal point to low values of the latent scale.")$res
+              } else {
+                restrict_ind_high <- .select_const(object,
+                                                   const_type=const_type,
+                                                   multiple=FALSE,
+                                                   title="Select one item in your data to constrain its discrimination to high values of the latent scale.")$res
+                restrict_ind_low <- .select_const(object,
+                                                   const_type=const_type,
+                                                   multiple=FALSE,
+                                                   title="Select one item in your data to constrain its discrimination to low values of the latent scale.")$res
+                
+              }
 
-            object <- run_id(object=object,this_data=this_data,nfix=nfix,
-                   restrict_ind_high=restrict_ind_high,
-                   restrict_ind_low=restrict_ind_low,
-                   ncores=ncores,
-                   model_type=model_type,
-                   use_groups=use_groups,
-                   fixtype=fixtype,
-                   prior_fit=prior_fit,
-                   tol_rel_obj=tol_rel_obj)
+              if(any(restrict_ind_low %in% restrict_ind_high)) {
+                stop("Please do not select the same items or persons to constrain both high and low on the latent scale.")
+              }
+              
+            }
+            
+            if(fixtype=="vb_full") {
+              object <- .vb_fix(object=object,this_data=this_data,
+                               restrict_ind_high=restrict_ind_high,
+                               restrict_ind_low=restrict_ind_low,
+                               ncores=ncores,
+                               const_type=const_type,
+                               model_type=model_type,
+                               use_groups=use_groups,
+                               num_restrict_high=num_restrict_high,
+                               num_restrict_low=num_restrict_low,
+                               fixtype=fixtype)
+            } else {
+              
+              # need to convert character to IDs
+              
+              if(is.character(restrict_ind_high)) {
+                if(const_type=="items") {
+                  n_old <- names(restrict_ind_high)
+                  restrict_ind_high <- as.numeric(factor(restrict_ind_high,
+                                                  levels=levels(object@score_matrix$item_id)))
+                  names(restrict_ind_high) <- n_old
+                } else {
+                  if(use_groups) {
+                    n_old <- names(restrict_ind_high)
+                    restrict_ind_high <- as.numeric(factor(restrict_ind_high,
+                                                    levels=levels(object@score_matrix$group_id)))
+                    names(restrict_ind_high) <- n_old
+                  } else {
+                    n_old <- names(restrict_ind_high)
+                    restrict_ind_high <- as.numeric(factor(restrict_ind_high,
+                                                    levels=levels(object@score_matrix$person_id)))
+                    names(restrict_ind_high) <- n_old
+                  }
+                  
+                }
+                
+              }
+              
+              if(is.character(restrict_ind_low)) {
+                if(const_type=="items") {
+                  n_old <- names(restrict_ind_low)
+                  restrict_ind_low <- as.numeric(factor(restrict_ind_low,
+                                                 levels=levels(object@score_matrix$item_id)))
+                  names(restrict_ind_low) <- n_old
+                } else {
+                  if(use_groups) {
+                    n_old <- names(restrict_ind_low)
+                    restrict_ind_low <- as.numeric(factor(restrict_ind_low,
+                                                   levels=levels(object@score_matrix$group_id)))
+                    names(restrict_ind_low) <- n_old
+                  } else {
+                    n_old <- names(restrict_ind_low)
+                    restrict_ind_low <- as.numeric(factor(restrict_ind_low,
+                                                   levels=levels(object@score_matrix$person_id)))
+                    names(restrict_ind_low) <- n_old
+                  }
+                  
+                }
+                
+              }
+              
+              object@restrict_num_high <- fix_high
+              object@restrict_num_low <- fix_low
+              object@restrict_ind_high <- restrict_ind_high
+              object@restrict_ind_low <- restrict_ind_low
+              object@constraint_type <- const_type
+              
+              
+            }
+
+            
             
 
             return(object)
           })
 
 #' Posterior Summaries for fitted \code{idealstan} object
-#' 
+#'
 #' This function produces quantiles and standard deviations for the posterior samples of \code{idealstan} objects.
-#' 
+#'
 #' @param object An \code{idealstan} object fitted by \code{\link{id_estimate}}
-#' @param pars Either \code{'ideal_pts'} for person ideal points, 
+#' @param pars Either \code{'ideal_pts'} for person ideal points,
 #' \code{'items'} for items/bills difficulty and discrimination parameters,
 #' and \code{'all'} for all parameters in the model, including incidental parameters.
-#' @param high_limit A number between 0 and 1 reflecting the upper limit of the 
+#' @param high_limit A number between 0 and 1 reflecting the upper limit of the
 #' uncertainty interval (defaults to 0.95).
-#' @param low_limit A number between 0 and 1 reflecting the lower limit of the 
+#' @param low_limit A number between 0 and 1 reflecting the lower limit of the
 #' uncertainty interval (defaults to 0.05).
-#' @param aggregate Whether to return summaries of the posterior values or the 
+#' @param aggregated Whether to return summaries of the posterior values or the
 #' full posterior samples. Defaults to \code{TRUE}.
+#' @param use_chain ID of a specific MCMC chain to use. Default (NULL) is all the chains
+#' and is recommended.
+#' @param cores Number of cores to use for parallel processing when summarizing
+#' item parameters. Defaults to 1 (no parallelization). Values greater than 1 use
+#' \code{parallel::mclapply} for faster computation with many items. Note that
+#' parallelization only works on Unix-like systems (Linux, macOS); on Windows,
+#' this parameter is ignored and single-core processing is used.
 #' @return A \code{\link[dplyr]{tibble}} data frame with parameters as rows and descriptive statistics as columns
-#' 
+#' @examples
+#' \donttest{
+#' data('senate114')
+#' senate114$cast_code <- ifelse(senate114$cast_code=="Absent", NA,
+#'                               as.integer(senate114$cast_code) - 1L)
+#' sen_data <- id_make(senate114, outcome_disc='cast_code',
+#'                     person_id='bioname', item_id='rollnumber',
+#'                     group_id='party_code')
+#' sen_est <- id_estimate(sen_data, model_type=1, fixtype='vb_full', use_method="pathfinder", ncores=4)
+#' summary(sen_est, pars='ideal_pts')
+#' summary(sen_est, pars='items')
+#' }
 #' @export
 setMethod('summary',signature(object='idealstan'),
           function(object,pars='ideal_pts',
                    high_limit=0.95,
                    low_limit=0.05,
-                   aggregate=TRUE) {
+                   aggregated=TRUE,
+                   use_chain=NULL,
+                   cores=1) {
             
             options(tibble.print_max=1000,
                     tibble.print_min=100)
@@ -269,11 +688,12 @@ setMethod('summary',signature(object='idealstan'),
               ideal_pts <- .prepare_legis_data(object,
                                                high_limit=high_limit,
                                                low_limit=low_limit,
-                                               aggregate=aggregate)
-              if(is.null(ideal_pts$time_id)) {
+                                               aggregated=aggregated,
+                                               use_chain=use_chain)
+              if(!("time_id" %in% names(ideal_pts))) {
                 ideal_pts$time_id=1
               }
-              if(aggregate) {
+              if(aggregated) {
                 ideal_pts <- select(ideal_pts,
                                     Person=person_id,
                                     Group=group_id,
@@ -284,7 +704,7 @@ setMethod('summary',signature(object='idealstan'),
                                     `Parameter Name`=legis)
               } else {
                 # add in iteration numbers
-                ideal_pts <- group_by(ideal_pts,person_id) %>% 
+                ideal_pts <- group_by(ideal_pts,person_id,time_id) %>% 
                   mutate(Iteration=1:n())
                 ideal_pts <- select(ideal_pts,
                                     Person=person_id,
@@ -301,61 +721,54 @@ setMethod('summary',signature(object='idealstan'),
 
               # a bit trickier with item points
               item_plot <- levels(object@score_data@score_matrix$item_id)
-              if(object@model_type %in% c(1,2) || (object@model_type>6 && object@model_type<13)) {
+
+              # Use parallel processing if cores > 1 and on Unix-like system
+              if(cores > 1 && .Platform$OS.type == "unix") {
+                apply_func <- function(...) parallel::mclapply(..., mc.cores = cores)
+              } else {
+                apply_func <- lapply
+              }
+
+              if(object@model_type %in% c(1,2,7,8,9,10,11,12,15,16) || (object@model_type>6 && object@model_type<13)) {
                 # binary models and continuous
-                item_points <- lapply(item_plot,.item_plot_binary,object=object,
+                item_points <- apply_func(item_plot,.item_plot_binary,object=object,
                                       low_limit=low_limit,
                                       high_limit=high_limit,
-                                      all=T,
-                                      aggregate=aggregate) %>% bind_rows()
+                                      all=TRUE,
+                                      aggregated=aggregated,
+                                      use_chain=use_chain) %>% bind_rows()
               } else if(object@model_type %in% c(3,4)) {
                 # rating scale
-                item_points <- lapply(item_plot,.item_plot_ord_rs,object=object,
+                item_points <- apply_func(item_plot,.item_plot_ord_rs,object=object,
                                       low_limit=low_limit,
                                       high_limit=high_limit,
-                                      all=T,
-                                      aggregate=aggregate) %>% bind_rows()
+                                      all=TRUE,
+                                      aggregated=aggregated,
+                                      use_chain=use_chain) %>% bind_rows()
               } else if(object@model_type %in% c(5,6)) {
                 # grm
-                item_points <- lapply(item_plot,.item_plot_ord_grm,object=object,
+                item_points <- apply_func(item_plot,.item_plot_ord_grm,object=object,
                                       low_limit=low_limit,
                                       high_limit=high_limit,
-                                      all=T,
-                                      aggregate=aggregate) %>% bind_rows()
+                                      all=TRUE,
+                                      aggregated=aggregated,
+                                      use_chain=use_chain) %>% bind_rows()
               } else if(object@model_type %in% c(13,14)) {
                 # latent space
-                item_points <- lapply(item_plot,.item_plot_ls,object=object,
+                item_points <- apply_func(item_plot,.item_plot_ls,object=object,
                                       low_limit=low_limit,
                                       high_limit=high_limit,
-                                      all=T,
-                                      aggregate=aggregate) %>% bind_rows()
+                                      all=TRUE,
+                                      aggregated=aggregated,
+                                      use_chain=use_chain) %>% bind_rows()
               }
               return(item_points)
             }
 
             
             if(pars=='all') {
-              if(!is.null(pars)) {
-                sumobj <- rstan::summary(object@stan_samples,pars=pars)
-                this_summary <- sumobj[[1]] %>% as_data_frame
-              } else {
-                sumobj <- rstan::summary(object@stan_samples)
-                this_summary <- sumobj[[1]] %>% as_data_frame
-              }
               
-              this_summary <- mutate(this_summary,
-                                     parameters=row.names(sumobj[[1]]),
-                                     par_type=stringr::str_extract(parameters,'[A-Za-z_]+')) %>% 
-                rename(posterior_mean=`mean`,
-                       posterior_sd=`sd`,
-                       posterior_median=`50%`,
-                       Prob.025=`2.5%`,
-                       Prob.25=`25%`,
-                       Prob.75=`75%`,
-                       Prob.975=`97.5%`) %>% 
-                select(parameters,par_type,posterior_mean,posterior_median,posterior_sd,Prob.025,
-                       Prob.25,Prob.75,Prob.975)
-              return(this_summary)
+              return(object@summary)
             }
             
             if(pars %in% c('person_cov','discrim_reg_cov','discrim_infl_cov')) {
@@ -364,20 +777,19 @@ setMethod('summary',signature(object='idealstan'),
                                    discrim_reg_cov='sigma_reg_x',
                                    discrim_infl_cov='sigma_abs_x')
               
-              to_sum <- as.array(object@stan_samples,
-                                  pars=param_name)
+              to_sum <- object@stan_samples$draws(param_name)
               
               # reset names of parameters
               new_names <- switch(pars,person_cov=object@score_data@person_cov,
                                   discrim_reg=object@score_data@item_cov,
                                   discrim_abs=object@score_data@item_cov_miss)
               
-              attributes(to_sum)$dimnames$parameters <- new_names
+              attributes(to_sum)$dimnames$variable <- new_names
               
-              if(!aggregate) {
+              if(!aggregated) {
                 return(to_sum)
               } else {
-                out_d <- data_frame(Covariate=new_names,
+                out_d <- tibble(Covariate=new_names,
                                     `Posterior Median`=apply(to_sum,3,median),
                                     `Posterior High Interval`=apply(to_sum,3,quantile,high_limit),
                                     `Posterior Low Interval`=apply(to_sum,3,quantile,low_limit),
@@ -389,50 +801,9 @@ setMethod('summary',signature(object='idealstan'),
             
 })
 
-#' Generic Function for Plotting \code{idealstan} objects
-#' 
-#' This generic function will run all the plotting functions associated with fitted \code{idealstan} objects.
-#' 
-#' @param object An \code{idealstan} object
-#' @param ... Other options passed onto the underlying plot function
-#' 
-#' @export
-setGeneric('id_plot',
-           signature='object',
-           function(object,...) standardGeneric('id_plot'))
-
-#' Plot Results of \code{\link{id_estimate}}
-#' 
-#' This function allows you to access the full range of plotting options for fitted \code{idealstan} models.
-#' 
-#' \code{id_plot} is a wrapper function that can access the various plotting functions available in the \code{idealstan} package. 
-#'    Currently, the options are limited to a plot of legislator/person ideal points with bills/item midpoints as an optional overlay.
-#'    Additional plots will be available in future versions of \code{idealstan}.
-#' @param object A fitted \code{idealstan} object
-#' @param plot_type Specify the plot as a character string. Currently 'persons' for legislator/person ideal point plot and 
-#'    'histogram' for a histogram of model estimates for given parameters.
-#' @param ... Additional arguments passed on to the underlying functions. See individual function documentation for details.
-#' @return A \code{\link[ggplot2]{ggplot}} object
-#' @seealso \code{\link{id_plot_legis}} for a legislator/person ideal point plot, 
-#' \code{\link{id_plot_all_hist}} for a standard histogram plot,
-#' \code{\link{id_plot_compare}} for an ideal point plot of two different models of the same data,
-#' \code{\link{id_plot_rhats}} for a histogram of \code{Rhat} values,
-#' \code{\link{id_plot_sims}} for plotting true versus estimated values,
-#' \code{\link{id_estimate}} for how to estimate an \code{idealstan} object.
-#' @export
-setMethod(id_plot, signature(object='idealstan'),
-          function(object,plot_type='persons',...) {
-            if(plot_type=='persons') {
-              id_plot_legis(object,...)
-            } else if(plot_type=='histogram') {
-              id_plot_all_hist(object,...)
-            }
-            
-          })
-
 #' Generic Method for Extracting Posterior Samples
 #' 
-#' This generic will extract the full \code{\link[rstan]{stan}}} posterior samples from \code{idealstan} objects.
+#' This generic will extract the full \code{\link[rstan]{stan}} posterior samples from \code{idealstan} objects.
 #' 
 #' See the corresponding method definition for more information about what you can acccess with this generic.
 #' 
@@ -440,6 +811,18 @@ setMethod(id_plot, signature(object='idealstan'),
 #' 
 #' @param object A fitted \code{idealstan} object
 #' @param ... Other arguments passed on to underlying functions
+#' @examples
+#' \donttest{
+#' data('senate114')
+#' senate114$cast_code <- ifelse(senate114$cast_code=="Absent", NA,
+#'                               as.integer(senate114$cast_code) - 1L)
+#' sen_data <- id_make(senate114, outcome_disc='cast_code',
+#'                     person_id='bioname', item_id='rollnumber',
+#'                     group_id='party_code')
+#' sen_est <- id_estimate(sen_data, model_type=1, fixtype='vb_full', use_method="pathfinder", ncores=4)
+#' id_extract(sen_est, extract_type='persons')
+#' }
+#' @return A \code{\link[tibble]{tibble}} of posterior draws, with rows as draws and columns as parameters.
 #' @export
 setGeneric('id_extract',signature='object',
            function(object,...) standardGeneric('id_extract'))
@@ -460,12 +843,28 @@ setGeneric('id_extract',signature='object',
 #'  
 #' @param object A fitted \code{idealstan} object (see \code{\link{id_estimate}})
 #' @param extract_type Can be one of \code{'persons'} for person/legislator ideal points,
-#' \code{'reg_discrim'} for non-inflated item (bill) discrimination scores,
-#' \code{'reg_diff'} for non-inflated item (bill) difficulty scores,
+#' \code{'obs_discrim'} for non-inflated item (bill) discrimination scores,
+#' \code{'obs_diff'} for non-inflated item (bill) difficulty scores,
 #' \code{'miss_discrim'} for inflated item (bill) discrimination scores,
 #' and \code{'miss_diff'} for inflated item (bill) difficulty scores.
 #' @param ... Any additional arguments passed on to the \code{\link[rstan]{extract}} function.
+#' @examples
+#' \donttest{
+#' data('senate114')
+#' senate114$cast_code <- ifelse(senate114$cast_code=="Absent", NA,
+#'                               as.integer(senate114$cast_code) - 1L)
+#' sen_data <- id_make(senate114, outcome_disc='cast_code',
+#'                     person_id='bioname', item_id='rollnumber',
+#'                     group_id='party_code')
+#' sen_est <- id_estimate(sen_data, model_type=1, use_method="pathfinder", fixtype='vb_full', ncores=4)
 #' 
+#' # will launch interactive browser
+#' if(interactive()) {
+#'   launch_shinystan(sen_est)
+#' }
+#'
+#' }
+#' @return A \code{\link[tibble]{tibble}} of posterior draws, with rows as draws and columns as parameters.
 #' @export
 setMethod(id_extract,signature(object='idealstan'),
           function(object,extract_type='persons',...) {
@@ -478,7 +877,8 @@ setMethod(id_extract,signature(object='idealstan'),
 #' A generic function for launching \code{\link[shinystan]{launch_shinystan}}.
 #' 
 #' @param object A fitted \code{idealstan} object.
-#' @param ... Other arguments passed on to underlying function 
+#' @param ... Other arguments passed on to underlying function
+#' @return No return value; called for side effects (launches the Shinystan interactive diagnostics application).
 #' @export
 setGeneric('launch_shinystan',signature='object',
            function(object,...) standardGeneric('launch_shinystan')) 
@@ -493,19 +893,309 @@ setGeneric('launch_shinystan',signature='object',
 #' @param object A fitted \code{idealstan} object
 #' @param pars A character vector of parameters to select from the underlying \code{rstan} model object
 #' @param ... Other parameters passed on to \code{\link[shinystan]{shinystan}}
-#' @importFrom shinystan as.shinystan launch_shinystan
+#' @examples
+#' \donttest{
+#' data('senate114')
+#' senate114$cast_code <- ifelse(senate114$cast_code=="Absent", NA,
+#'                               as.integer(senate114$cast_code) - 1L)
+#' sen_data <- id_make(senate114, outcome_disc='cast_code',
+#'                     person_id='bioname', item_id='rollnumber',
+#'                     group_id='party_code')
+#' sen_est <- id_estimate(sen_data, model_type=1, use_method="pathfinder", fixtype='vb_full', ncores=4)
+#' 
+#' # will launch interactive browser
+#' if(interactive()) {
+#'   launch_shinystan(sen_est)
+#' }
+#'
+#' }
+#' @return No return value; called for side effects (launches the Shinystan interactive diagnostics application).
 #' @export
 setMethod(launch_shinystan,signature(object='idealstan'),
-          function(object,pars=c('L_free',
-                                 'sigma_reg_free',
+          function(object,pars=c('L_full',
+                                 'sigma_reg_full',
                                  'sigma_abs_free',
-                                 'restrict_high',
-                                 'restrict_low',
-                                 'restrict_ord',
+                                 "A_int_free",
+                                 "B_int_free",
                                  'steps_votes',
                                  'steps_votes_grm'),...) {
-            to_shiny <- as.shinystan(object@stan_samples)
-            launch_shinystan(to_shiny,...)
+            if(requireNamespace("shinystan", quietly = FALSE) && packageDescription("shinystan")$Version=="3.0.0") {
+              shinystan::launch_shinystan(object@stan_samples,...)
+            } else {
+              stop("You need to install version 3.0.0 of package shinystan. To do so, use remotes::install_github('stan-dev/shinystan', ref='v3-alpha') ")
+            }
+            
+          })
+
+#' Calculate ideal point marginal effects
+#' 
+#' This function allows you to calculate ideal point marginal effects for a
+#' given person-level hierarchical covariate.
+#' 
+#' This function will calculate item-level ideal point marginal effects
+#' for a given covariate that was passed to the `id_make` function using the
+#' `person_cov` option. The function will iterate over all items in the model
+#' and use numerical differentiation to calculate responses in the scale of the
+#' outcome for each item. Note: if the covariate is binary (i.e., only has two values),
+#' then the function will calculate the difference between these two values instead of
+#' using numerical differentation.
+#' 
+#' @returns Returns a tibble that has one row per posterior draw per item-specific
+#' marginal effect in the scale of the outcome.
+#' @param object A fitted \code{idealstan} model
+#' @param ... Other values passed on to methods.
+#' @examples
+#' \donttest{
+#' data('senate114')
+#' senate114$cast_code <- ifelse(senate114$cast_code=="Absent", NA,
+#'                               as.integer(senate114$cast_code) - 1L)
+#' senate114$age <- (2018 - senate114$born - mean(2018 - senate114$born)) / 10
+#' sen_cov <- id_make(senate114, outcome_disc='cast_code',
+#'                    person_id='bioname', item_id='rollnumber',
+#'                    group_id='party_code', person_cov=~party_code+age)
+#' sen_cov_est <- id_estimate(sen_cov, model_type=1, fixtype='vb_full', 
+#'                 use_method="pathfinder",  ncores=4)
+#' me <- id_me(sen_cov_est, covariate='age', draws=50)
+#' me$sum_ideal_effects
+#' }
+#' @export
+setGeneric('id_me',
+           signature='object',
+           function(object,...) standardGeneric('id_me'))
+
+#' Calculate ideal point marginal effects
+#' 
+#' This function allows you to calculate ideal point marginal effects for a
+#' given person-level hierarchical covariate.
+#' 
+#' This function will calculate item-level ideal point marginal effects
+#' for a given covariate that was passed to the `id_make` function using the
+#' `person_cov` option. The function will iterate over all items in the model
+#' and use numerical differentiation to calculate responses in the scale of the
+#' outcome for each item. Note: if the covariate is binary (i.e., only has two values),
+#' then the function will calculate the difference between these two values instead of
+#' using numerical differentation.
+#' 
+#' @returns A list with two objects, \code{ideal_effects} with one estimate of the 
+#' marginal effect per item and posterior draw and \code{sum_ideal_effects} with 
+#' one row per item with that item's median ideal point marginal effect with the quantiles
+#' defined by the \code{upb} and \code{lb} parameters.
+#' @param object A fitted \code{idealstan} model
+#' @param covariate The character value for a covariate passed to the
+#' `id_make` function before model fitting. Only one covariate can be processed
+#' at a time.
+#' @param group_effects character value of a covariate included in the formula passed
+#' to `id_make` for which marginal effect summaries should be grouped by. Useful
+#' when looking at the marginal effect of an interaction. Note that grouping by a covariate
+#' with many values will result in slow performance.
+#' @param pred_outcome Numeric value for level of outcome to predict for ordinal responses.
+#' Defaults to top level.
+#' @param eps The value used for numerical differentiation. Default is 1e-4. Usually 
+#' does not need to be changed.
+#' @param draws The total number of draws to use when calculating the marginal effects.
+#' Defaults to 100. Use option "all" to use all available MCMC draws.
+#' @param cores The total number of cores to use when calculating the marginal effects.
+#' Defaults to 1.
+#' @param lb The quantile for the lower bound of the aggregated effects (default is 0.025 for a 95% interval)
+#' @param upb The quantile for the upper bound of the aggregated effects (default is 0.975 for a 95% interval)
+#' @param eps Parameter for numerical differentiation (usually does not need to be changed)
+#' passed on to [id_post_pred]
+#' @param ... Additional arguments passed on to [id_post_pred]
+#' @examples
+#' \donttest{
+#' data('senate114')
+#' senate114$cast_code <- ifelse(senate114$cast_code=="Absent", NA,
+#'                               as.integer(senate114$cast_code) - 1L)
+#' senate114$age <- (2018 - senate114$born - 
+#'                  mean(2018 - senate114$born)) / 10
+#' sen_cov <- id_make(senate114, outcome_disc='cast_code',
+#'                    person_id='bioname', item_id='rollnumber',
+#'                    group_id='party_code', person_cov=~party_code+age)
+#' sen_cov_est <- id_estimate(sen_cov, model_type=1, fixtype='vb_full',
+#'                            use_method="pathfinder", ncores=4)
+#' me <- id_me(sen_cov_est, covariate='age', draws=50)
+#' me$sum_ideal_effects
+#' }
+#' @export
+setMethod('id_me',signature(object='idealstan'),
+          function(object,
+                   covariate=NULL,
+                   group_effects=NULL,
+                   pred_outcome=NULL,
+                   eps=1e-4,
+                   draws=100,
+                   cores=1,
+                   lb=0.025,
+                   upb=0.975,
+                   ...) {
+          
+            # first need new data with the covariate differenced by eps
+            # if binary
+            # otherwise set to 1s and 0s
+            
+            # calc two separate datasets
+            # check if it's binary first
+            
+            # get original data
+            
+            func_args <- object@score_data@func_args
+            
+            is_binary <- length(unique(pull(func_args$score_data, {{covariate}} )))==2
+            
+            if(is_binary) {
+              
+              data1 <- mutate(func_args$score_data, {{covariate}} := 1)
+              
+              data0 <- mutate(func_args$score_data, {{covariate}} := 0)
+              
+              # un_vals <- unique(pull(func_args$score_data, {{covariate}} ))
+              # 
+              #  
+              # 
+              # if(is.numeric(pull(func_args$score_data, {{covariate}} ))) {
+              #   
+              #   data0 <- mutate(func_args$score_data, {{covariate}} := ifelse(.data[[covariate]]==un_vals[1],
+              #                                                                 un_vals[2],un_vals[1])) 
+              #   
+              #   
+              # } else {
+              #   
+              #   
+              #   
+              # } 
+              
+              
+              
+            } else {
+              
+              data1 <- mutate(func_args$score_data, {{covariate}} := .data[[covariate]] + eps / 2)
+              
+              data0 <- mutate(func_args$score_data, {{covariate}} := .data[[covariate]] - eps / 2)
+              
+            }
+            
+            # now create predictions
+            
+            message("Creating predictions")
+            
+            # need to sample draws
+            
+            n_iters <- nrow(as_draws_matrix(object@stan_samples$draws("L_full")))
+            
+            if(draws!="all") {
+              
+              draws <- sample(1:n_iters,draws)
+              
+            }
+            
+            pred1 <- id_post_pred(object,newdata=data1,
+                                          use_cores=cores,
+                                          draws=draws,
+                                          pred_outcome=pred_outcome,
+                                          type="epred",...)
+            
+            # if binary covariate, simply leave it out when
+            # predicting the outcome
+            
+            pred0 <- id_post_pred(object,newdata=data0,
+                                          use_cores=cores,
+                                          draws=draws,
+                                          pred_outcome=pred_outcome,
+                                          type="epred",...)
+            
+            message("Differencing")
+            
+            c1 <- purrr::map2(pred0[[1]],
+                              pred1[[1]],
+                              function(small,big) {
+                                
+                                # difference the effects
+                                
+                                if(is_binary) {
+                                  
+                                  return(big - small)
+                                  
+                                } else {
+                                  
+                                  return((big - small)/eps)
+                                  
+                                }
+                                
+                              })
+            
+            # combine into datasets for each item with item id + person (senator) id
+            
+            c2 <- lapply(c1, function(mat) {
+              
+              out_data <- attr(mat, "data")
+              colnames(mat) <- out_data$person_id
+              
+              as_tibble(mat, .name_repair = "minimal") %>%
+                mutate(draws=1:n(),
+                       item_id=unique(out_data$item_id)) %>% 
+                gather(key="person_id",value="estimate",-draws,-item_id) %>% 
+                mutate(person_id=as.numeric(person_id),
+                       estimate=as.numeric(estimate))
+              
+            }) %>% bind_rows
+            
+            # merge in some original data
+            to_merge <- mutate(object@score_data@score_matrix, 
+                               item_orig=item_id,
+                               person_orig=person_id,
+                               person_id=as.numeric(person_id),
+                               item_id=as.numeric(item_id)) %>% 
+              select(person_id, item_id, group_id,item_orig, person_orig, model_id,
+                     all_of(group_effects)) %>% 
+              distinct
+            
+            # add in party data so we can calculate party-specific effects
+            
+            c2 <- left_join(c2, to_merge, 
+                            by=c("item_id","person_id"))
+            
+            # get effect separately by each item 
+            
+            if(!is.null(group_effects)) {
+              
+              message(paste0("Grouping marginal effect summaries by ", group_effects))
+              
+              group_effects <- rlang::sym(group_effects)
+              
+              sum_vals <- c2 %>% 
+                        group_by(draws, !! group_effects , item_id, item_orig, model_id) %>% 
+                summarize(mean_est1=mean(estimate)) %>% 
+                group_by( !! group_effects, item_id, item_orig, model_id) %>% 
+                summarize(mean_est=mean(mean_est1),
+                          low_est=quantile(mean_est1, lb),
+                          high_est=quantile(mean_est1, upb)) %>% 
+                ungroup
+              
+            } else {
+              
+              sum_vals <- group_by(c2, item_id, item_orig, model_id) %>% 
+                summarize(mean_est=mean(estimate),
+                          low_est=quantile(estimate, lb),
+                          high_est=quantile(estimate, upb)) %>% 
+                ungroup
+              
+            }
+            
+            
+            
+            # merge in item discrimination
+            
+            item_discrim <- filter(object@summary,
+                                   grepl(x=variable, pattern="sigma\\_reg\\_free")) %>% 
+              mutate(item_id=as.numeric(stringr::str_extract(variable, "[0-9]+")))
+            
+            sum_vals <- left_join(sum_vals,
+                                  select(item_discrim, item_discrimination='median', item_id))
+            
+            return(list(sum_ideal_effects=sum_vals,
+                        ideal_effects=c2))
+            
+          
           })
 
 #' Plot the MCMC posterior draws by chain
@@ -516,42 +1206,72 @@ setMethod(launch_shinystan,signature(object='idealstan'),
 #' To use this function, you must pass a fitted \code{idealstan} object
 #' along with the name of a parameter in the model. To determine these
 #' parameter names, use the \code{summary} function or obtain the data
-#' from a plot by passing the \code{return_data=TRUE} option to 
-#' \code{id_plog_legis} or \code{id_plot_legis_dyn} to find the 
+#' from a plot by passing the \code{return_data=TRUE} option to
+#' \code{id_plot_persons} or \code{id_plot_persons_dyn} to find the
 #' name of the parameter in the Stan model.
-#' 
-#' This function is a simple wrapper around \code{\link[rstan]{stan_trace}}. 
+#'
+#' This function is a simple wrapper around \code{\link[bayesplot]{mcmc_trace}}.
 #' Please refer to that function's documentation for further options.
-#' 
+#'
 #' @param object A fitted \code{idealstan} model
+#' @importFrom bayesplot mcmc_trace
 #' @param ... Other options passed on to \code{\link[rstan]{stan_trace}}
+#' @examples
+#' \donttest{
+#' data('senate114')
+#' senate114$cast_code <- ifelse(senate114$cast_code=="Absent", NA,
+#'                               as.integer(senate114$cast_code) - 1L)
+#' sen_data <- id_make(senate114, outcome_disc='cast_code',
+#'                     person_id='bioname', item_id='rollnumber',
+#'                     group_id='party_code')
+#' sen_est <- id_estimate(sen_data, model_type=1, 
+#'            fixtype='vb_full', use_method="pathfinder", ncores=4)
+#' stan_trace(sen_est, par='L_full[1]')
+#' }
+#' @return A \code{ggplot2} object (from \code{\link[bayesplot]{mcmc_trace}}) showing MCMC trace plots
+#'   for the selected parameter.
 #' @export
 setGeneric('stan_trace',
            signature='object',
            function(object,...) standardGeneric('stan_trace'))
 
 #' Plot the MCMC posterior draws by chain
-#' 
+#'
 #' This function allows you to produce trace plots for assessing the quality
-#' and convergence of MCMC chains. 
-#' 
+#' and convergence of MCMC chains.
+#'
 #' To use this function, you must pass a fitted \code{idealstan} object
 #' along with the name of a parameter in the model. To determine these
 #' parameter names, use the \code{summary} function or obtain the data
-#' from a plot by passing the \code{return_data=TRUE} option to 
-#' \code{id_plog_legis} or \code{id_plot_legis_dyn} to find the 
+#' from a plot by passing the \code{return_data=TRUE} option to
+#' \code{id_plot_persons} or \code{id_plot_persons_dyn} to find the
 #' name of the parameter in the Stan model.
 #' 
-#' This function is a simple wrapper around \code{\link[rstan]{stan_trace}}. 
+#' This function is a simple wrapper around \code{\link[bayesplot]{mcmc_trace}}. 
 #' Please refer to that function's documentation for further options.
 #' 
 #' @param object A fitted \code{idealstan} model
-#' @param par The character string  name of a parameter in the model 
-#' @param ... Other options passed on to \code{\link[rstan]{stan_trace}}
+#' @param par The character string  name of a parameter in the model
+#' @param ... Other options passed on to \code{\link[bayesplot]{mcmc_trace}}
+#' @examples
+#' \donttest{
+#' data('senate114')
+#' senate114$cast_code <- ifelse(senate114$cast_code=="Absent", NA,
+#'                               as.integer(senate114$cast_code) - 1L)
+#' sen_data <- id_make(senate114, outcome_disc='cast_code',
+#'                     person_id='bioname', item_id='rollnumber',
+#'                     group_id='party_code')
+#' sen_est <- id_estimate(sen_data, model_type=1,
+#'             fixtype='vb_full', use_method="pathfinder", 
+#'             ncores=4)
+#' stan_trace(sen_est, par='L_full[1]')
+#' }
+#' @return A \code{ggplot2} object (from \code{\link[bayesplot]{mcmc_trace}}) showing MCMC trace plots
+#'   for the selected parameter.
 #' @export
 setMethod('stan_trace',signature(object='idealstan'),
-          function(object,par='L_full[1]') {
+          function(object,par='L_full[1]',...) {
             
-        rstan::stan_trace(object@stan_samples,pars = par)
+        mcmc_trace(object@stan_samples$draws(par),...)
           })
 

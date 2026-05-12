@@ -1,244 +1,333 @@
 #' Create data to run IRT model
 #' 
-#' To run an IRT model using \code{idealstan}, you must first process your data using the \code{id_make} 
+#' To run an IRT model using `idealstan`, you must first process your data using the `id_make` 
 #' function. 
 #' 
-#' @details This function can accept either a \code{rollcall} data object from package
-#' \code{pscl} or 
-#' a long data frame where one row equals one item-person (bill-legislator)
-#' observation with associated outcome. The preferred method is the long data frame 
-#' as passing a long data frame permits
-#' the inclusion of a wide range of covariates in the model, such as person-varying and item-varying 
-#' (bill-varying) covariates. 
-#' If a \code{rollcall} object is passed to the function, the \code{rollcall} data is converted
-#' to a long data frame with data from the \code{vote.data} matrix used to determine dates for bills.
-#' If passing a long data frame, you should specify the names of the 
-#' columns containing the IDs for persons, items and 
-#' groups (groups are IDs that may have multiple observations per ID, such as political parties or
-#' classes) to the \code{id_make} function, along with the name of the response/outcome. 
+#' @details This function accepts a long data frame where one row equals one item-person (bill-legislator)
+#' observation with associated continuous or discrete outcomes/responses.
+#' You either need to include columns with specific names as required by the `id_make`
+#' function such as `person_id` for person IDs and `item_id` for item IDs or
+#'  specify the names of the 
+#' columns containing the IDs to the `id_make` function for each column name (see examples).
 #' The only required columns are the item/bill ID and the person/legislator ID along with an 
-#' outcome column. 
+#' outcome column, `outcome_disc` for discrete variables and `outcome_cont` for
+#' continuous variables. If both columns are included, then any value can be included for 
+#' `outcome_disc` if there are values for `outcome_cont` and vice versa.
 #' 
-#' The preferred format for the outcome column for discrete variables (binary or ordinal)
-#' is to pass a factor variable with levels in the correct order, i.e., in ascending order.
-#' For example, if using legislative data, the levels of the factor should be \code{c('No','Yes')}.
-#' If a different kind of variable is passed, such as a character or numeric variable, 
-#' you should consider specifying \code{low_val},\code{high_val} and \code{middle_val} to 
-#' determine the correct order of the discrete outcome. Specifying \code{middle_val} is only
-#' necessary if you are estimating an ordinal model.
+#' If items of multiple types are included, a column `model_id` must be included with
+#' the model type (see `id_estimate` function documentation for list of model IDs)
+#' for the response distribution, such as 
+#' 1 for binary non-inflated, etc. If an ordinal outcome is included, an additional column
+#' `ordered_id` must be included that has the total count of categories for that 
+#' ordinal variable (i.e., 3 for 3 categories). 
 #' 
-#' If you do not specify a value for \code{miss_val}, then any \code{NA} are assumed to be 
-#' missing. If you do specify \code{miss_val} and you also have \code{NA} in your data 
-#' (assuming \code{miss_val} is not \code{NA}), then the function will treat the data
-#' coded as \code{miss_val} as missing data that should be modeled and will treat the \code{NA}
-#' data as ignorable missing data that will be removed (list-wise deletion) before estimating a
-#' model.
+#' For discrete data, it is recommended to include a numeric variable that starts at 0, such 
+#' as values of 0 and 1 for binary data and 0,1,2 for ordinal/categorical data.
+#' For continuous (unbounded) data, it is recommended to standardize the outcome to improve
+#' model convergence and fit. 
 #' 
-#' @section Time-Varying Models
+#' Missing data should be passed as `NA` values in either
+#' `outcome_disc` or `outcome_cont` and will be processed internally.
+#' 
+#' 
+#' @section Time-Varying Models:
 #' 
 #' To run a time-varying model, you need to include the name of a column with dates (or integers) that is passed 
-#' to the \code{time_id} option.
+#' to the `time_id` option.
 #' 
-#' @section Continuous Outcomes
+#' @section Continuous Outcomes:
 #' 
-#' If the outcome is unbounded i.e. a continuous or an unbounded 
-#' discrete variable like Poisson, simply set \code{unbounded} to \code{TRUE}. You can ignore the
-#' options that specify which values should be \code{high_val} or \code{low_val}. You can either specify
-#' a particular value as missing using \code{miss_val}, or all 
-#' missing values (\code{NA}) will be recoded to a specific value out of the range of the outcome to use
-#' for modeling the missingness.
+#' If the outcome is continuous, you need to pass a dataframe with one column named
+#' "outcome_disc" or pass the name of the column with the continuous data to the `outcome_disc`
+#' argument. 
 #' 
-#' @section Hierarchical Covariates
+#' @section Hierarchical Covariates:
 #' 
 #' Covariates can be fit on the person-level ideal point parameters as well as
 #' item discrimination parameters for either the inflated (missing) or non-inflated (observed) 
 #' models. These covariates must be columns that were included with the data fed to the 
-#' \code{\link{id_make}} function. The covariate relationships are specified as 
-#' one-sided formulas, i.e. \code{~cov1 + cov2 + cov1*cov2}. To interact covariates with the 
-#' person-level ideal points you can use \code{~cov1 + person_id + cov1*person_id} and for
-#' group-level ideal poins you can use \code{~cov1 + group_id + cov1*group_id} where
-#' \code{group_id} or \code{person_id} is the same name as the name of the column 
-#' for these options that you passed to \code{id_make} (i.e., the names of the columns
-#' in the original data).
+#' [id_make()] function. The covariate relationships are specified as 
+#' one-sided formulas, i.e. `~cov1 + cov2 + cov1*cov2`. To interact covariates with the 
+#' person-level ideal points you can use `~cov1 + person_id + cov1*person_id` and for
+#' group-level ideal poins you can use `~cov1 + group_id + cov1*group_id` where
+#' `group_id` or `person_id` is the same name as the name of the column 
+#' for these options that you passed to `id_make` (i.e., the names of the columns
+#' in the original data). If you are also going to model these intercepts--i.e. you are 
+#' interacting the covariate with `person_id` and the model is estimating ideal points
+#' at the person level--then set `remove_cov_int` to TRUE to avoid multicollinearity with the
+#' ideal point intercepts.
 #' 
 #' @param score_data A data frame in long form, i.e., one row in the data for each 
-#' measured score or vote in the data or a \code{rollcall} data object from package \code{pscl}.
-#' @param outcome Column name of the outcome in \code{score_data}, default is \code{"outcome"}
-#' @param person_id Column name of the person/legislator ID index in \code{score_data}, 
-#' default is \code{'person_id'}. Should be integer, character or factor.
-#' @param item_id Column name of the item/bill ID index in \code{score_data}, 
-#' default is \code{'item_id'}.  Should be integer, character or factor.
-#' @param time_id Column name of the time values in \code{score_data}: 
-#' optional, default is \code{'time_id'}. Should be a date or date-time class, but can be an integer
+#' measured score or vote in the data or a `rollcall` data object from package `pscl`.
+#' @param outcome_disc Column name of the outcome with discrete values in `score_data`, default is `"outcome_disc"`
+#' @param outcome_cont Column name of the outcome with discrete values in `score_data`, default is `"outcome_disc"`
+#' @param ordered_id Column name of the variable showing the count of categories for 
+#' ordinal/categorical items (must be at least 3 categories)
+#' @param ignore_id Optional column for identifying observations that should not be 
+#' modeled (i.e., not just treated as missing, rather removed during estimation). Should 
+#' be a binary vector (0 for remove and 1 for include). Useful for time-varying models where
+#' persons may not be present during particular periods and missing data is ignorable.
+#' @param person_id Column name of the person/legislator ID index in `score_data`, 
+#' default is `'person_id'`. Should be integer, character or factor.
+#' @param item_id Column name of the item/bill ID index in `score_data`, 
+#' default is `'item_id'`.  Should be integer, character or factor.
+#' @param time_id Column name of the time values in `score_data`: 
+#' optional, default is `'time_id'`. Should be a date or date-time class, but can be an integer
 #' (i.e., years in whole numbers).
-#' @param group_id Optional column name of a person/legislator group IDs (i.e., parties) in \code{score_data}. 
-#' Optional, default is \code{'group_id'}. Should be integer, character or factor.
+#' @param model_id Column name of the model/response types in the data.
+#' Default is `"model_id"`. Only necessary if a model with multiple 
+#' response types (i.e., binary + continuous outcomes). Must be a 
+#' column with a series
+#' of integers matching the model types in [id_estimate()] 
+#' showing which row of the data matches which outcome.
+#' @param group_id Optional column name of a person/legislator group IDs (i.e., parties) in `score_data`. 
+#' Optional, default is `'group_id'`. Should be integer, character or factor.
 #' @param person_cov A one-sided formula that specifies the covariates
-#' in \code{score_data} that will be used to hierarchically model the person/legislator ideal points
+#' in `score_data` that will be used to hierarchically model the person/legislator ideal points
 #' @param item_cov A one-sided formula that specifies the covariates
-#' in \code{score_data} that will be used to hierarchically model the 
+#' in `score_data` that will be used to hierarchically model the 
 #' item/bill discrimination parameters for the regular model
 #' @param item_cov_miss A one-sided formula that specifies the covariates
 #' in the dataset that will be used to hierarchically model the item/bill discrimination parameters for the
 #' missing data model.
 #' @param remove_cov_int Whether to remove constituent terms from hierarchical covariates that 
-#' interact covariates with IDs like \code{person_id} or \code{item_id}. Set to \code{TRUE} if
+#' interact covariates with IDs like `person_id` or `item_id`. Set to `TRUE` if
 #' including these constituent terms would cause multi-collinearity with other terms in the model
 #' (such as running a group-level model with a group-level interaction or a person-level model
 #' with a person-level interaction).
-#' @param simul_data Optionally, data that has been generated by the \code{\link{id_sim_gen}} function.
-#' @param miss_val The value (numeric or character) that indicate missing data/absences in the data. 
-#' If missing data is coded as \code{NA}, 
-#'  simply leave this parameter at the default, \code{NA}.
-#' @param high_val The value (numeric or character) that indicate the highest discrete outcome possible, 
-#' such as yes in a vote dataset or correct in a test examination.
-#' @param low_val The value (numeric or character) that indicates the lowest discrete outcome possible, 
-#' such as no votes in a vote dataset or incorrect in a test examination.
-#' @param middle_val The value (numeric or character) that indicate values 
-#' between the lowest and highest categories, such as abstention in voting data or 
-#' "Neither Agree nor Disagree" in Likert scales.
-#'  If there are multiple possible values, 
-#'  pass along a numeric or character vector of all such values in correct order (lower to higher values).
-#'  If there are no middle values (binary outcome), leave empty.
+#' @param simul_data Optionally, data that has been generated by the [id_sim_gen()] function.
 #' @param unbounded Whether or not the outcome/response is unbounded (i.e., continuous or
-#'  Poisson). If it is, \code{miss_val} 
+#'  Poisson). If it is, missing value 
 #'  is recoded as the maximum of the outcome + 1. 
-#' @param exclude_level A vector of any values that should be treated as \code{NA} in the response matrix. 
-#' Unlike the \code{miss_val} parameter, these values will be dropped from the data before 
+#' @param exclude_level A vector of any values that should be treated as `NA` in the response matrix. 
+#' Unlike missing values, these values will be dropped from the data before 
 #' estimation rather than modeled explicitly.
-#' @param simulation If \code{TRUE}, simulated values are saved in the \code{idealdata} object for 
-#' later plotting with the \code{\link{id_plot_sims}} function
-#' @return A \code{idealdata} object that can then be used in the \code{\link{id_estimate}} function 
+#' @param simulation If `TRUE`, simulated values are saved in the `idealdata` object for 
+#' later plotting with the [id_show_trues()] function
+#' @return A `idealdata` object that can then be used in the [id_estimate()] function 
 #' to fit a model.
 #' @export
-#' @import rstan
 #' @import dplyr
 #' @importFrom tidyr gather spread
-#' @import bayesplot
-#' @import rstantools
-#' @import Rcpp
+#' @importFrom forcats fct_relevel
 #' @import methods
 #' @importFrom stats dbinom median plogis quantile reorder rexp rlnorm runif sd step rnorm
 #' @importFrom utils person
-#' @useDynLib idealstan, .registration = TRUE
-#' @examples 
-#' # You can either use a pscl rollcall object or a vote/score matrix 
-#' # where persons/legislators are in the rows
-#' # and items/bills are in the columns
-#' 
+#' @examples
 #' library(dplyr)
-#' 
-#' # First, using a rollcall object with the 114th Senate's rollcall votes:
-#' 
+#'
+#' # Basic usage: 114th Senate rollcall votes as a discrete binary outcome.
+#' # cast_code is recoded to 0/1 (No/Yes) with absences as NA.
+#'
 #' data('senate114')
-#' 
-#' to_idealstan <-   id_make(score_data = senate114,
-#'                outcome = 'cast_code',
-#'                person_id = 'bioname',
-#'                item_id = 'rollnumber',
-#'                group_id= 'party_code',
-#'                time_id='date',
-#'                high_val='Yes',
-#'                low_val='No',
-#'                miss_val='Absent')
-#' 
+#' senate114$cast_code <- ifelse(senate114$cast_code == "Absent", NA,
+#'                               senate114$cast_code)
+#' senate114$cast_code <- as.integer(senate114$cast_code) - 1L
+#'
+#' senate_data <- id_make(score_data = senate114,
+#'                        outcome_disc = 'cast_code',
+#'                        person_id = 'bioname',
+#'                        item_id = 'rollnumber',
+#'                        group_id = 'party_code',
+#'                        time_id = 'date')
+#'
+#' # Mixed discrete and continuous outcomes.
+#' # When items have different response distributions, add a model_id column
+#' # with the integer model type for each row (see ?id_estimate for the full
+#' # list).  Discrete values go in outcome_disc; continuous values go in
+#' # outcome_cont.  Rows that belong to the other type should be NA.
+#' #
+#' # Here, roll calls <= 200 are kept as binary (model_id = 1) and roll calls
+#' # > 200 use the NOMINATE probability as a standardised continuous outcome
+#' # (model_id = 9, unbounded normal).
+#'
+#' binary_part <- filter(senate114, rollnumber <= 200) %>%
+#'   mutate(outcome_disc = cast_code,
+#'          outcome_cont = NA_real_,
+#'          model_id     = 1L)
+#'
+#' cont_part <- filter(senate114, rollnumber > 200) %>%
+#'   mutate(outcome_disc = NA_integer_,
+#'          outcome_cont = as.numeric(scale(prob)),
+#'          model_id     = 9L)
+#'
+#' mixed_data <- bind_rows(binary_part, cont_part)
+#'
+#' mixed_idealdata <- id_make(score_data  = mixed_data,
+#'                            outcome_disc = 'outcome_disc',
+#'                            outcome_cont = 'outcome_cont',
+#'                            model_id     = 'model_id',
+#'                            person_id    = 'bioname',
+#'                            item_id      = 'rollnumber',
+#'                            group_id     = 'party_code')
+#'
+#' # Person- and item-level covariates.
+#' # Pass one-sided formulas to person_cov and item_cov.  Covariates must be
+#' # columns already present in score_data.  Center continuous covariates
+#' # (here, age in units of 10 years) to improve mixing.
+#' #
+#' # person_cov hierarchically predicts each senator's ideal point.
+#' # item_cov hierarchically predicts each roll call's discrimination parameter.
+#'
+#' senate114$age <- (2018 - senate114$born)
+#' senate114$age <- (senate114$age - mean(senate114$age)) / 10
+#'
+#' senate_cov_data <- id_make(score_data = senate114,
+#'                            outcome_disc = 'cast_code',
+#'                            person_id    = 'bioname',
+#'                            item_id      = 'rollnumber',
+#'                            group_id     = 'party_code',
+#'                            time_id      = 'date',
+#'                            person_cov   = ~party_code + age,
+#'                            item_cov     = ~session)
+#'
 id_make <- function(score_data=NULL,
-                    outcome='outcome',
+                    outcome_disc='outcome_disc',
+                    outcome_cont='outcome_cont',
                     person_id='person_id',
                     item_id='item_id',
                     time_id='time_id',
                     group_id='group_id',
+                    model_id='model_id',
+                    ordered_id="ordered_id",
+                    ignore_id="ignore_id",
                     simul_data=NULL,
-                           person_cov=NULL,
-                  item_cov=NULL,
-                           item_cov_miss=NULL,
-                  remove_cov_int=FALSE,
-                           miss_val=NA,high_val=NULL,low_val=NULL,middle_val=NULL,
+                    person_cov=NULL,
+                    item_cov=NULL,
+                    item_cov_miss=NULL,
+                    remove_cov_int=FALSE,
                     unbounded=FALSE,
-                           exclude_level=NA,simulation=FALSE) {
+                    exclude_level=NA,simulation=FALSE) {
+  
+  # first, save all arguments to the function call
+  
+  func_args <- match.call()
+  
+  # force evaluation of first argument in case it was piped
+  
+  func_args_list <- as.list(func_args)
+  
+  func_args_list[[1]] <- NULL
+
+  func_args_list$score_data <- score_data
+  # Force formula args to their actual values so do.call() in id_post_pred
+  # does not try to re-evaluate the caller's local variable names.
+  func_args_list$person_cov <- person_cov
+  func_args_list$item_cov <- item_cov
+  func_args_list$item_cov_miss <- item_cov_miss
+  
+  # only allow  missing values as NA
+  
+  miss_val <- c(NA,NA)
+  
+  high_val <- NULL
+  middle_val <- NULL
+  low_val <- NULL
   
   
   # make sure to ungroup it if it's a tidy data frame
   if('tbl' %in% class(score_data)) score_data <- ungroup(score_data)
   
-  # if object is a rollcall, pre-process data into long form
-  if('rollcall' %in% class(score_data)) {
-    score_data <- .prepare_rollcall(score_data,item_id=item_id,
-                                    time_id=time_id)
-    
-    time_id <- score_data$time_id
-    item_id <- score_data$item_id
-    score_data <- score_data$score_data
-    
-    miss_val <- 9
-    low_val <- 6
-    high_val <- 1
-    exclude_level <- c(3,7)
-
-  } 
+  # data is already in long form
   
-    # data is already in long form
+  # save original ID names as strings to filter later
   
-    # save original ID names as strings to filter later
+  orig_id <- c(item_id,
+               group_id,
+               person_id)
   
-    orig_id <- c(item_id,
-                 group_id,
-                 person_id)
-  
-    # test for input and quote
-    outcome <- .check_quoted(outcome,quo(outcome))
-    item_id <- .check_quoted(item_id,quo(item_id))
-    time_id <- .check_quoted(time_id,quo(time_id))
-    group_id <- .check_quoted(group_id,quo(group_id))
-    person_id <- .check_quoted(person_id,quo(person_id))
-
+  # test for input and quote
+  outcome_disc <- .check_quoted(outcome_disc,quo(outcome_disc))
+  outcome_cont <- .check_quoted(outcome_cont,quo(outcome_cont))
+  ordered_id <- .check_quoted(ordered_id,quo(ordered_id))
+  item_id <- .check_quoted(item_id,quo(item_id))
+  time_id <- .check_quoted(time_id,quo(time_id))
+  group_id <- .check_quoted(group_id,quo(group_id))
+  person_id <- .check_quoted(person_id,quo(person_id))
+  model_id <- .check_quoted(model_id,quo(model_id))
   
   
   # rename data
   # IDs are made factors now so we can re-arrange indices when need be
   score_rename <- select(score_data,
-                       outcome = !!outcome,
-                       item_id = !!item_id,
-                       person_id = !!person_id) %>% 
+                         item_id = !!item_id,
+                         person_id = !!person_id) %>% 
     mutate(item_id=factor(!! quo(item_id)),
            person_id=factor(!! quo(person_id)))
+  
+  # need to test model number one first
+  
+  test_model <- try(pull(score_data,!!model_id),silent=TRUE)
+  
+  if(any('try-error' %in% class(test_model))) {
+    score_rename$model_id <- "missing"
+  } else {
+    score_rename$model_id <- as.integer(test_model)
+  }
   
   # if time or group IDs don't exist, make dummies
   
   test_group <- try(factor(pull(score_data,!!group_id)),silent=TRUE)
   test_time <- try(pull(score_data,!!time_id),silent=TRUE)
+  test_out_disc <- try(factor(pull(score_data,!!outcome_disc)),silent=TRUE)
+  test_out_cont <- try(pull(score_data,!!outcome_cont),silent=TRUE)
+  test_ordered <- try(pull(score_data,!!ordered_id),silent=TRUE)
   
   if(any('try-error' %in% class(test_group))) {
-    score_rename$group_id <- factor("G")
+    score_rename$group_id <- 1L
   } else {
-    score_rename$group_id <- test_group
+    score_rename$group_id <- as.integer(test_group)
   }
   if(any('try-error' %in% class(test_time))) {
-    score_rename$time_id <- 1
+    score_rename$time_id <- 1L
   } else {
     score_rename$time_id <- test_time
   }
   
+  if(any('try-error' %in% class(test_out_disc))) {
+    
+  } else {
+    score_rename$outcome_disc <- as.integer(test_out_disc)
+  }
+  
+  if(any('try-error' %in% class(test_out_cont))) {
+    
+  } else {
+    score_rename$outcome_cont <- test_out_cont
+  }
+  
+  if(any("try_error" %in% class(test_ordered))) {
+    
+  } else {
+    score_rename$ordered_id <- test_ordered
+  }
+  
+  
   # now we can make these all quosures again to use in NSE
   
-  outcome <- quo(outcome)
+  outcome_disc <- quo(outcome_disc)
+  outcome_cont <- quo(outcome_cont)
   item_id <- quo(item_id)
   person_id <- quo(person_id)
   time_id <- quo(time_id)
   group_id <- quo(group_id)
+  model_id <- quo(model_id)
+  ordered_id <- quo(ordered_id)
   
   # see what the max time point is
   
-  max_t <- max(as.numeric(factor(pull(score_rename,!!time_id))),na.rm=T)
-  num_person <- max(as.numeric(factor(pull(score_rename,!!person_id))),na.rm=T)
+  max_t <- max(as.numeric(factor(pull(score_rename,!!time_id))),na.rm=TRUE)
+  num_person <- max(as.numeric(factor(pull(score_rename,!!person_id))),na.rm=TRUE)
   num_group <- try(max(as.numeric(factor(pull(score_rename,!!group_id)))))
-  num_item <- max(as.numeric(factor(pull(score_rename,!!item_id))),na.rm=T)
+  num_item <- max(as.numeric(factor(pull(score_rename,!!item_id))),na.rm=TRUE)
   
   # create data frames for all hierachical parameters
-
+  
   if(!is.null(person_cov)) {
-
-    personm <- model.matrix(person_cov,data=score_data)
+    
+    # drop intercept
+    
+    personm <- model.matrix(person_cov,data=score_data)[,-1,drop=FALSE]
     
     # need to check for missing data and remove any missing from IDs
     
@@ -249,30 +338,38 @@ id_make <- function(score_data=NULL,
     # need to remove any constituent terms for IDs from the model matrix to avoid collinearity with 
     # model parameters
     
-    check_ids <- sapply(orig_id, function(c) {
+    check_ids <- sapply(levels(score_rename$person_id), function(pers) {
       check_all <- grepl(x=colnames(personm),
-                         pattern=c)
+                         pattern=as.character(pers))
       check_all_colon <- grepl(x=colnames(personm),
-                               pattern=":")
-      check_all & !check_all_colon
-    }) %>% apply(1,any)
+                               pattern=paste0(as.character(pers),":","|",":",as.character(pers)))
+      matrix(check_all & !check_all_colon,nrow=length(check_all))
+    },simplify = FALSE) %>% 
+      do.call(rbind, .) %>% 
+      apply(2,any)
     
     if(remove_cov_int) {
-      personm <- personm[,!check_ids] 
+      personm <- personm[,!check_ids,drop=F]
     }
 
+    # Add prefix to person covariate names to avoid conflicts (issue #32)
+    colnames(personm) <- paste0("person_", colnames(personm))
+
     score_rename <- bind_cols(score_rename,
-                              as_data_frame(personm))
-    person_cov <- dimnames(personm)[[2]]
+                              as_tibble(personm, .name_repair = "minimal"))
+    person_cov_names <- dimnames(personm)[[2]]
   } else {
     # make a dummy column if no covariate data
     score_rename$personcov0 <- 0
-    person_cov <- 'personcov0'
+    person_cov_names <- 'personcov0'
+    person_cov <- formula()
+    # need to avoid picking up stuff from environment
+    environment(person_cov) <- emptyenv()
   }
   
   if(!is.null(item_cov)) {
     
-    itemm <- model.matrix(item_cov,data=score_data)
+    itemm <- model.matrix(item_cov,data=score_data)[,-1,drop=F]
     
     # need to check for missing data and remove any missing from IDs
     
@@ -283,31 +380,38 @@ id_make <- function(score_data=NULL,
     # need to remove any constituent terms for IDs from the model matrix to avoid collinearity with 
     # model parameters
     
-    check_ids <- sapply(orig_id, function(c) {
+    check_ids <- sapply(levels(score_rename$item_id), function(c) {
       check_all <- grepl(x=colnames(itemm),
                          pattern=c)
       check_all_colon <- grepl(x=colnames(itemm),
-                               pattern=":")
-      check_all & !check_all_colon
-    }) %>% apply(1,any)
+                               pattern=paste0(c,":","|",":",c))
+      matrix(check_all & !check_all_colon,nrow=length(check_all))
+    },simplify = FALSE) %>% 
+      do.call(rbind, .) %>% 
+      apply(2,any)
     
     if(remove_cov_int) {
       itemm <- itemm[,!check_ids]
     }
-    
-    
+
+    # Add prefix to item covariate names to avoid conflicts (issue #32)
+    colnames(itemm) <- paste0("item_", colnames(itemm))
+
     score_rename <- bind_cols(score_rename,
-                              as_data_frame(itemm))
-    item_cov <- dimnames(itemm)[[2]]
+                              as_tibble(itemm, .name_repair = "minimal"))
+    item_cov_names <- dimnames(itemm)[[2]]
   } else {
     # make a dummy column if no covariate data
     score_rename$itemcov0 <- 0
-    item_cov <- 'itemcov0'
+    item_cov_names <- 'itemcov0'
+    item_cov <- formula()
+    # need to avoid picking up stuff from environment
+    environment(item_cov) <- emptyenv()
   }
   
   if(!is.null(item_cov_miss)) {
     
-    itemmissm <- model.matrix(item_cov_miss,data=score_data)
+    itemmissm <- model.matrix(item_cov_miss,data=score_data)[,-1,drop=FALSE]
     
     # need to check for missing data and remove any missing from IDs
     
@@ -318,95 +422,155 @@ id_make <- function(score_data=NULL,
     # need to remove any constituent terms for IDs from the model matrix to avoid collinearity with 
     # model parameters
     
-    check_ids <- sapply(orig_id, function(c) {
+    check_ids <- sapply(levels(score_rename$item_id), function(c) {
       check_all <- grepl(x=colnames(itemmissm),
                          pattern=c)
       check_all_colon <- grepl(x=colnames(itemmissm),
-                               pattern=":")
-      check_all & !check_all_colon
-    }) %>% apply(1,any)
+                               pattern=paste0(c,":","|",":",c))
+      matrix(check_all & !check_all_colon,nrow=length(check_all))
+    },simplify = FALSE) %>% 
+      do.call(rbind, .) %>% 
+      apply(2,any)
     
     if(remove_cov_int) {
       itemmissm <- itemmissm[,!check_ids]
     }
 
+    # Add prefix to item_miss covariate names to avoid conflicts (issue #32)
+    colnames(itemmissm) <- paste0("item_miss_", colnames(itemmissm))
+
     score_rename <- bind_cols(score_rename,
-                              as_data_frame(itemmissm))
-    item_cov_miss <- dimnames(itemmissm)[[2]]
+                              as_tibble(itemmissm, .name_repair = "minimal"))
+    item_cov_miss_names <- dimnames(itemmissm)[[2]]
   } else {
     # make a dummy column if no covariate data
     score_rename$itemcovmiss0 <- 0
-    item_cov_miss <- 'itemcovmiss0'
+    item_cov_miss_names <- 'itemcovmiss0'
+    item_cov_miss <- formula()
+    # need to avoid picking up stuff from environment
+    environment(item_cov_miss) <- emptyenv()
   }
   
   # recode score/outcome
-  if(!unbounded) {
+  if("outcome_disc" %in% names(score_rename)) {
     
-    if(is.na(miss_val)) {
-      score_rename$outcome[is.na(score_rename$outcome)] <- 'Missing'
-      miss_val <- 'Missing'
+    if(is.na(miss_val[1])) {
+      # make NA a level, then change it
+      score_rename$outcome_disc <- addNA(score_rename$outcome_disc)
+      levels(score_rename$outcome_disc)[length(levels(score_rename$outcome_disc))] <- "Missing"
+      miss_val[1] <- 'Missing'
     }
     
     if(!is.null(high_val) && !is.null(low_val) && !is.null(middle_val)) {
-
-      score_rename$outcome <- factor(score_rename$outcome,
-                                     levels=c(low_val,middle_val,high_val,miss_val),
-                                     exclude = exclude_level)
+      
+      score_rename$outcome_disc <- factor(score_rename$outcome_disc,
+                                          levels=c(low_val,middle_val,high_val,miss_val[1]),
+                                          exclude = exclude_level)
     } else if(!is.null(high_val) && !is.null(low_val)) {
-      score_rename$outcome <- factor(score_rename$outcome,
-                                     levels=c(low_val,high_val,miss_val),
-                                     exclude = exclude_level)
+      score_rename$outcome_disc <- factor(score_rename$outcome_disc,
+                                          levels=c(low_val,high_val,miss_val[1]),
+                                          exclude = exclude_level)
     } else {
       # variable does not need to be recoded, only move missing to the end
-      score_rename$outcome <- factor(score_rename$outcome)
-      score_rename$outcome <- fct_relevel(score_rename$outcome,as.character(miss_val),after=Inf)
+      score_rename$outcome_disc <- factor(score_rename$outcome_disc)
+      # Only relevel if the missing level actually exists in the data
+      if(as.character(miss_val[1]) %in% levels(score_rename$outcome_disc)) {
+        score_rename$outcome_disc <- fct_relevel(score_rename$outcome_disc,as.character(miss_val[1]),after=Inf)
+      }
     }
+    
+    # reconvert if continuous values present
+    if("outcome_cont" %in% names(score_rename)) {
+      
+      levels(score_rename$outcome_disc) <- c(levels(score_rename$outcome_disc),
+                                             "Joint Posterior")
+      
+      score_rename$outcome_disc[score_rename$model_id>8 & score_rename$model_id<13] <- "Joint Posterior"
+      
+    }
+    
   } 
-
-
-  if(unbounded) {
-    max_val <- max(pull(score_rename,!!outcome))
-    # make missing data the highest observed value
-    if(is.na(miss_val)) {
-      score_rename <- mutate(score_rename,!! quo_name(outcome) := coalesce(is.na(!!outcome),max_val+1L))
+  
+  
+  
+  
+  if("outcome_cont" %in% names(score_rename)) {
+    
+    if("outcome_disc" %in% names(score_rename)) {
+      max_val <- max(pull(score_rename,!!outcome_cont)[score_rename$outcome_disc=="Joint Posterior"],na.rm=TRUE)
     } else {
-      score_rename <- mutate(score_rename,!! quo_name(outcome) := ifelse(!!outcome==miss_val,max_val+1L,!!outcome))
+      max_val <- max(pull(score_rename,!!outcome_cont),na.rm=TRUE)
     }
-    miss_val <- max_val+1L
+    
+    # make missing data the highest observed value
+    if(is.na(miss_val[2])) {
+      
+      if("outcome_disc" %in% names(score_rename)) {
+        # only truly missing if discrete outcome also missing
+        score_rename$outcome_cont[score_rename$outcome_disc=="Joint Posterior" & !is.na(score_rename$outcome_disc)] <- coalesce(score_rename$outcome_cont[score_rename$outcome_disc=="Joint Posterior" & !is.na(score_rename$outcome_disc)],max_val+1L)
+        
+        # need to set another value for not truly missing values for appended datasets
+        score_rename$outcome_cont[score_rename$outcome_disc!="Joint Posterior"] <- max_val + 2L
+      } else {
+        
+        score_rename <- mutate(score_rename,!! quo_name(outcome_cont) := coalesce(!!outcome_cont,max_val+1L))
+      }
+    } else {
+      if("outcome_disc" %in% names(score_rename)) {
+        score_rename <- mutate(score_rename,!! quo_name(outcome_cont) := ifelse(!!outcome_cont==miss_val[2] & outcome_disc=="Joint Posterior" &
+                                                                                  !is.na(outcome_disc),max_val+1L,!!outcome_cont))
+        # need to set another value for not truly missing values for appended datasets
+        score_rename$outcome_cont[score_rename$outcome_disc!="Joint Posterior"] <- max_val + 2L
+      } else {
+        score_rename <- mutate(score_rename,!! quo_name(outcome_cont) := ifelse(!!outcome_cont==miss_val[2],max_val+1L,!!outcome_cont))
+      }
+      
+    }
+    
+    miss_val[2] <- max_val + 1L
   } 
   
-
-  outobj <- new('idealdata',
-      score_matrix=score_rename,
-      person_cov=person_cov,
-      item_cov=item_cov,
-      item_cov_miss=item_cov_miss,
-      miss_val=miss_val)
   
-  if(simulation==TRUE) {
+  
+  # need to sort by integer vs. continuous
+  score_rename$discrete <- as.numeric(score_rename$model_id %in% c(1,2,3,4,5,6,7,8,13,14))
+  score_rename <- arrange(score_rename,desc(discrete),person_id,item_id)
+  
+  outobj <- new('idealdata',
+                score_matrix=score_rename,
+                person_cov=person_cov_names,
+                person_cov_formula=person_cov,
+                item_cov=item_cov_names,
+                item_cov_miss=item_cov_miss_names,
+                item_cov_formula=item_cov,
+                item_cov_miss_formula=item_cov_miss,
+                miss_val=miss_val,
+                func_args=func_args_list)
+  
+  if(simulation) {
     outobj@simul_data <- simul_data
     outobj@simulation <- simulation
   }
   return(outobj)
 }
 
-#' Estimate an \code{idealstan} model
+#' Estimate an `idealstan` model
 #' 
-#' This function will take a pre-processed \code{idealdata} vote/score dataframe and 
+#' This function will take a pre-processed `idealdata` vote/score dataframe and 
 #' run one of the available IRT/latent space ideal point models on the data using
 #' Stan's MCMC engine.
 #' 
-#' To run an IRT ideal point model, you must first pre-process your data using the \code{\link{id_make}} function. Be sure to specify the correct options for the
+#' To run an IRT ideal point model, you must first pre-process your data using the [id_make()] function. Be sure to specify the correct options for the
 #' kind of model you are going to run: if you want to run an unbounded outcome (i.e. Poisson or continuous),
 #' the data needs to be processed differently. Also any hierarchical covariates at the person or item level
-#' need to be specified in \code{\link{id_make}}. If they are specified in \code{\link{id_make}}, than all 
+#' need to be specified in [id_make()]. If they are specified in [id_make()], than all 
 #' subsequent models fit by this function will have these covariates.
 #' 
-#' \strong{Note that for static ideal point models, the covariates are only defined for those 
-#' persons who are not being used as constraints.}
+#' **Note that for static ideal point models, the covariates are only defined for those 
+#' persons who are not being used as constraints.**
 #' 
-#' As of this version of \code{idealstan}, the following model types are available. Simply pass 
-#' the number of the model in the list to the \code{model_type} option to fit the model.
+#' As of this version of `idealstan`, the following model types are available. Simply pass 
+#' the number of the model in the list to the `model_type` option to fit the model.
 #' 
 #' \enumerate{
 #'   \item IRT 2-PL (binary response) ideal point model, no missing-data inflation
@@ -423,27 +587,30 @@ id_make <- function(score_data=NULL,
 #'   \item Positive-unbounded (Log-normal) IRT ideal point model with missing-data inflation
 #'   \item Latent Space (binary response) ideal point model with no missing data
 #'   \item Latent Space (binary response) ideal point model with missing-data inflation
+#'   \item Ordered Beta (proportion/percentage) with no missing data
+#'   \item Ordered Beta (proportion/percentage) with missing-data inflation
 #' }
 #' 
-#' @section Time-Varying Inferece
+#' @section Time-Varying Inference:
 #' 
 #' In addition, each of these models can have time-varying ideal point (person) parameters if
-#' a column of dates is fed to the \code{\link{id_make}} function. If the option \code{vary_ideal_pts} is 
-#' set to \code{'random_walk'}, \code{id_estimate} will estimate a random-walk ideal point model where ideal points 
-#' move in a random direction. If \code{vary_ideal_pts} is set to \code{'AR1'}, a stationary ideal point model 
-#' is estimated where ideal points fluctuate around long-term mean. If \code{vary_ideal_pts} 
-#' is set to \code{'GP'}, then a semi-parametric Gaussian process time-series prior will be put
-#' around the ideal points. Please see the package vignette and associated paper for more detail
-#' about these time-varying models. Both the \code{'AR1'} and \code{'GP'} models can also 
-#' accept time-varying covariates.
+#' a column of dates is fed to the [id_make()] function. If the option `vary_ideal_pts` is 
+#' set to `'random_walk'`, `id_estimate` will estimate a random-walk ideal point model where ideal points 
+#' move in a random direction. If `vary_ideal_pts` is set to `'AR1'`, a stationary ideal point model 
+#' is estimated where ideal points fluctuate around long-term mean. If `vary_ideal_pts` 
+#' is set to `'GP'`, then a semi-parametric Gaussian process time-series prior will be put
+#' around the ideal points. If `vary_ideal_pts` 
+#' is set to `'splines'`, then the ideal point trajectories will be a basis spline defined by the parameters `spline_knots` and `spline_degree`. 
+#' Please see the package vignette and associated paper for more detail
+#' about these time-varying models.
 #' 
-#' @section Missing Data
+#' @section Missing Data:
 #' 
 #' The inflation model used to account for missing data assumes that missingness is a 
 #' function of the persons' (legislators')
 #' ideal points. In other words,the model will take into account if people with high or low ideal points
-#' tend to have more/less missing data on a specific item/bill. Missing data is whatever was 
-#' passed as \code{miss_val} to the \code{\link{id_make}} function. 
+#' tend to have more/less missing data on a specific item/bill. Missing data should be coded
+#' as `NA` when it is passed to the [id_make] function.
 #' If there isn't any relationship
 #' between missing data and ideal points, then the model assumes that the missingness is ignorable 
 #' conditional on each
@@ -451,164 +618,287 @@ id_make <- function(score_data=NULL,
 #' values. The inflation is designed to be general enough to handle a wide array of potential
 #' situations where strategic social choices make missing data important to take into account.
 #' 
-#' The missing data is assumed to be any possible value of the outcome. The well-known 
-#' zero-inflated Poisson model is a special case where missing values are known to be all zeroes. 
-#' To fit a zero-inflated Poisson model, change \code{inflate_zeroes} to \code{TRUE} and also 
-#' make sure to set the value for zero as \code{miss_val} in the \code{\link{id_make}} function.
-#' This will only work for outcomes that are distributed as Poisson variables (i.e., 
-#' unbounded integers or counts).
-#' 
 #' To leave missing data out of the model, simply choose a version of the model in the list above
 #' that is non-inflated.
 #' 
 #' Models can be either fit on the person/legislator IDs or on group-level IDs (as specified to the 
-#' \code{id_make} function). If group-level parameters should be fit, set \code{use_groups} to \code{TRUE}.
+#' `id_make` function). If group-level parameters should be fit, set `use_groups` to `TRUE`.
 #' 
-#' @section Covariates
+#' @section Covariates:
 #' 
 #' Covariates are included in the model if they were specified as options to the 
-#' \code{\link{id_make}} function. The covariate plots can be accessed with 
-#' \code{\link{id_plot_cov}} on a fitted \code{idealstan} model object.
+#' [id_make()] function. The covariate plots can be accessed with 
+#' [id_plot_cov()] on a fitted `idealstan` model object.
 #' 
 #' @section Identification:
 #' Identifying IRT models is challenging, and ideal point models are still more challenging 
 #' because the discrimination parameters are not constrained.
 #' As a result, more care must be taken to obtain estimates that are the same regardless of starting values. 
-#' The parameter \code{fixtype} enables you to change the type of identification used. The default, 'vb_full', 
+#' The parameter `fixtype` enables you to change the type of identification used. The default, 'vb_full', 
 #' does not require any further
 #' information from you in order for the model to be fit. In this version of identification, 
 #' an unidentified model is run using
-#' variational Bayesian inference (see \code{\link[rstan]{vb}}). The function will then select two 
-#' persons/legislators that end up on either end of the ideal point spectrum, and pin their ideal points
-#' to those specific values. This is sufficient to identify all of the static models and also the AR(1) 
-#' time-varying models. For random-walk time-varying models and Gaussian process
-#' models, identification is more difficult (see vignette).
-#' Setting the option \code{restrict_mean} to \code{TRUE} will implement additional identification 
-#' constraints on random-walk models, and is always implemented on Gaussian process models. This 
-#' option fixes the distance between high and low points of the time series based on a 
-#' variational inference run to prevent oscillation in the time series.
-#' A particularly convenient option for \code{fixtype} is \code{'vb_partial'}. In this case, the user
-#' should pass the IDs (as a character vector) of the persons to constrain high (\code{restrict_ind_high}) and
-#' low (\code{restrict_ind_low}). A model will then be fit to find the likely positions of these parameters,
-#' which will then be used to fit an identified model. In this way, the user can achieve a certain
-#' shape of the ideal point distribution without needing to choose specific values ahead of time to pin
-#' parameters to.
-#' If a prior model has been estimated with the same data, the user can re-use those identification 
-#' settings by passing the fitted \code{idealstan} object to the \code{prior_fit} option.
-#' @param idealdata An object produced by the \code{\link{id_make}} containing a score/vote matrix for use for estimation & plotting
-#' @param model_type An integer reflecting the kind of model to be estimated. See below.
+#' variational Bayesian inference (see [rstan::vb()]). The function will then select two 
+#' persons/legislators or items/bills that end up on either end of the ideal point spectrum, 
+#' and pin their ideal points
+#' to those specific values. 
+#' To control whether persons/legislator or items/bills are constrained,
+#' the `const_type` can be set to either `"persons"` or 
+#' `"items"` respectively. 
+#' In many situations, it is prudent to select those persons or items 
+#' ahead of time to pin to specific values. This allows the analyst to 
+#' be more specific about what type of latent dimension is to be 
+#' estimated. To do so, the `fixtype` option should be set to 
+#' `"prefix"`. The values of the persons/items to be pinned can be passed
+#' as character values to `restrict_ind_high` and 
+#' `restrict_ind_low` to pin the high/low ends of the latent 
+#' scale respectively. Note that these should be the actual data values 
+#' passed to the `id_make` function. If you don't pass any values, 
+#' you will see a prompt asking you to select certain values of persons/items.
+#' 
+#' The pinned values for persons/items are set by default to +1/-1, though
+#' this can be changed using the `fix_high` and 
+#' `fix_low` options. This pinned range is sufficient to identify 
+#' all of the models
+#' implemented in idealstan, though fiddling with some parameters may be 
+#' necessary in difficult cases. For time-series models, one of the 
+#' person ideal point over-time variances is also fixed to .1, a value that
+#' can be changed using the option `time_fix_sd`.
+#' @param idealdata An object produced by the [id_make()] 
+#' containing a score/vote matrix for use for estimation & plotting
+#' @param model_type An integer reflecting the kind of model to be estimated. 
+#' See below.
 #' @param inflate_zero If the outcome is distributed as Poisson (count/unbounded integer), 
 #' setting this to 
-#' \code{TRUE} will fit a traditional zero-inflated model. To use correctly, the value for 
-#' zero must be passed as the \code{miss_val} option to \code{\link{id_make}} before
-#' running a model so that zeroes are coded as missing data.
-#' @param vary_ideal_pts Default \code{'none'}. If \code{'random_walk'}, \code{'AR1'} or 
-#' \code{'GP'}, a 
+#' `TRUE` will fit a traditional zero-inflated model. 
+#' @param ignore_db If there are multiple time periods (particularly when there are 
+#' very many time periods), you can pass in a data frame
+#' (or tibble) with one row per person per time period and an indicator column 
+#' `ignore` that is equal to 1 for periods that should be considered in sample
+#' and 0 for periods for periods that should be considered out of sample. This is 
+#' useful for excluding time periods from estimation for persons when they could not 
+#' be present, i.e. such as before entrance into an organization or following death.
+#' If `ignore` equals 0, the person's ideal point is estimated as a standard Normal
+#' draw rather than an auto-correlated parameter, reducing computational 
+#' burden substantially.
+#' Note that there can only be one pre-sample period of 0s, one in-sample period of 1s,
+#' and one post-sample period of 0s. Multiple in-sample periods cannot be interspersed
+#' with out of sample periods. The columns must be labeled as `person_id`, 
+#' `time_id` and `ignore` and must match the formatting of the columns
+#' fed to the `id_make` function.
+#' @param keep_param A list with logical values for different categories of paremeters which
+#' should/should not be kept following estimation. Can be any/all of `person_int` for 
+#' the person-level intercepts (static ideal points), 
+#' `person_vary` for person-varying ideal points,
+#' `item` for observed item parameters (discriminations/intercepts),
+#' `item_miss` for missing item parameters (discriminations/intercepts),
+#' and `extra` for other parameters (hierarchical covariates, ordinal intercepts, etc.).
+#' Takes the form `list(person_int=TRUE,person_vary=TRUE,item=TRUE,item_miss=TRUE,extra=TRUE)`.
+#' If any are missing in the list, it is assumed that those parameters will be excluded.
+#' If `NULL` (default), will save all parameters in output.
+#' @param grainsize The grainsize parameter for the `reduce_sum` 
+#' function used for within-chain parallelization. The default is 1, 
+#' which means 1 chunk (item or person) per core. Set to -1. to use
+#' @param map_over_id This parameter identifies which ID variable to use to construct the 
+#' shards for within-chain parallelization. It defaults to `"persons"` but can also take
+#' a value of `"items"`. It is recommended to select whichever variable has more
+#' distinct values to improve parallelization.
+#' @param vary_ideal_pts Default `'none'`. If `'random_walk'`, `'AR1'`, 
+#' `'GP'`, or `'splines'`, a 
 #' time-varying ideal point model will be fit with either a random-walk process, an 
-#' AR1 process or a Gaussian process. See documentation for more info.
+#' AR1 process, a Gaussian process or a spline. 
+#' Note that the spline is the easiest time-varying model to fit so long as the number
+#' of knots (option `spline_knots`) is significantly less than 
+#' the number of time points in the data. 
+#' See documentation for more info.
+#' @param seed The integer seed passed on to the estimation engine (including the 
+#' algorithm used to obtain starting values)
 #' @param use_subset Whether a subset of the legislators/persons should be used instead of the full response matrix
 #' @param sample_it Whether or not to use a random subsample of the response matrix. Useful for testing.
-#' @param subset_group If person/legislative data was included in the \code{\link{id_make}} function, then you can subset by
-#' any value in the \code{$group} column of that data if \code{use_subset} is \code{TRUE}.
-#' @param subset_person A list of character values of names of persons/legislators to use to subset if \code{use_subset} is 
-#' \code{TRUE} and person/legislative data was included in the \code{\link{id_make}} function with the required \code{$person.names}
+#' @param subset_group If person/legislative data was included in the [id_make()] function, then you can subset by
+#' any value in the `$group` column of that data if `use_subset` is `TRUE`.
+#' @param subset_person A list of character values of names of persons/legislators to use to subset if `use_subset` is 
+#' `TRUE` and person/legislative data was included in the [id_make()] function with the required `$person.names`
 #' column
-#' @param sample_size If \code{sample_it} is \code{TRUE}, this value reflects how many legislators/persons will be sampled from
+#' @param sample_size If `sample_it` is `TRUE`, this value reflects how many legislators/persons will be sampled from
 #' the response matrix
-#' @param nchains The number of chains to use in Stan's sampler. Minimum is one. See \code{\link[rstan]{stan}} for more info.
-#' @param niters The number of iterations to run Stan's sampler. Shouldn't be set much lower than 500. See \code{\link[rstan]{stan}} for more info.
-#' @param use_vb Whether or not to use Stan's variational Bayesian inference engine instead of full Bayesian inference. Pros: it's much faster.
-#' Cons: it's not quite as accurate. See \code{\link[rstan]{vb}} for more info.
-#' @param tol_rel_obj If \code{use_vb} is \code{TRUE}, this parameter sets the stopping rule for the \code{vb} algorithm. 
-#' It's default is 0.001. A stricter threshold will require the sampler to run longer but may yield a
-#' better result in a difficult model with highly correlated parameters. Lowering the threshold should work fine for simpler
-#' models.
+#' @param nchains The number of chains to use in Stan's sampler. Minimum is one. See [rstan::stan()] for more info. If `use_method="pathfinder"`, this parameter
+#' will determine the number of Pathfinder paths to estimate.
+#' @param niters The number of iterations to run Stan's sampler. Shouldn't be set much lower than 500. See [rstan::stan()] for more info.
+#' @param use_method The type of estimation to use to estimate the posterior 
+#' distribution of the parameters. The default is `"mcmc"`, which uses Stan's 
+#' Hamiltonian Markov Chain Monte Carlo inference. The other options, `"pathfinder"` and `"laplace"`, are variational algorithms that derive an easier/faster to compute
+#" approximation. Pros: it's much faster but can be much less accurate. Note that Pathfinder is 
+#' also used by default for finding initial starting values for full HMC sampling.
 #' @param warmup The number of iterations to use to calibrate Stan's sampler on a given model. Shouldn't be less than 100. 
-#' See \code{\link[rstan]{stan}} for more info.
+#' See [rstan::stan()] for more info.
 #' @param ncores The number of cores in your computer to use for parallel processing in the Stan engine. 
-#' See \code{\link[rstan]{stan}} for more info.
-#' @param fixtype Sets the particular kind of identification used on the model, could be one of 'vb_full' 
-#' (identification provided exclusively by running a variational identification model with no prior info), 
-#' 'vb_partial' (two indices of ideal points to fix are provided but the values to fix are determined by the
-#' identification model), 
-#' 'constrain' (two indices of ideal points to fix are provided--only sufficient for model if \code{restrict_var} is 
-#' \code{FALSE}, 
-#' and 'prior_fit' (a previous identified \code{idealstan} fit is passed to the \code{prior_fit} option and used
-#' as the basis for identification).
+#' See [rstan::stan()] for more info. If `within_chain` is set to
+#' `"threads"`, this parameter will determine the number of threads 
+#' (independent processes) used for within-chain parallelization.
+#' @param fixtype Sets the particular kind of identification used on the model, could be either 'vb_full' 
+#' (identification provided exclusively by running a variational identification model with no prior info), or
+#' 'prefix' (two indices of ideal points or items to fix are provided to 
+#' options `restrict_ind_high` and `restrict_ind_low`).
 #'  See details for more information.
-#' @param prior_fit If a previous \code{idealstan} model was fit \emph{with the same} data, then the same
-#' identification constraints can be recycled from the prior fit if the \code{idealstan} object is passed 
-#' to this option. Note that means that all identification options, like \code{restrict_var}, will also 
-#' be the same
-#' @param id_diff The fixed difference between the high/low person/legislator ideal points used to identify the model. 
-#' Set at 4 as a standard value but can be changed to any arbitrary number without affecting model results besides re-scaling.
-#' @param id_diff_high The fixed intercept of the high ideal point used to constrain the model. 
+#' @param prior_only Whether to only sample from priors as opposed to the full model
+#' with likelihood (the default). Useful for doing posterior predictive checks.
+#' @param mpi_export If `within_chains="mpi"`, this parameter should refer to the 
+#' directory where the necessary data and Stan code will be exported to. If missing, 
+#' an interactive dialogue will prompt the user for a directory. 
 #' @param id_refresh The number of times to report iterations from the variational run used to 
 #' identify models. Default is 0 (nothing output to console).
-#' @param sample_stationary If \code{TRUE}, the AR(1) coefficients in a time-varying model will be 
-#' sampled from an unconstrained space and then mapped back to a stationary space. Leaving this \code{TRUE} is 
-#' slower but will work better when there is limited information to identify a model. If used, the
-#' \code{ar_sd} parameter should be increased to 5 to allow for wider sampling in the unconstrained space.
-#' @param ar_sd If an AR(1) model is used, this defines the prior scale of the Normal distribution. A lower number 
-#' can help 
-#' identify the model when there are few time points.
-#' @param use_groups If \code{TRUE}, group parameters from the person/legis data given in \code{\link{id_make}} will be 
+#' @param ar_prior If an AR(1) model is used, this 2-length vector sets the 
+#' shape (alpha) and scale (beta) of the Beta prior on the AR-1 adjustment 
+#' parameters (often denoted phi). The first element of the vector is alpha
+#' and the second is beta. See Stan documentation of the Beta distribution
+#' for more info.
+#' @param use_groups If `TRUE`, group parameters from the person/legis data given in [id_make()] will be 
 #'  estimated instead of individual parameters. 
-#' @param restrict_ind_high If \code{fixtype} is not "vb", the particular indices of legislators/persons or bills/items to constrain high
-#' @param restrict_ind_low If \code{fixtype} is not "vb", the particular indices of legislators/persons or bills/items to constrain low. 
-#' (Note: not used if values are pinned).
-#' @param discrim_reg_sd Set the prior standard deviation of the bimodal prior for the discrimination parameters for the non-inflated model.
-#' @param discrim_miss_sd Set the prior standard deviation of the bimodal prior for the discrimination parameters for the inflated model.
-#' @param person_sd Set the prior standard deviation for the legislators (persons) parameters
-#' @param time_sd The precision (inverse variance) of the over-time component of the person/legislator
-#' parameters. A higher value will allow for less over-time variation (useful if estimates bounce too much). 
-#' Default is 4.
+#' @param const_type Whether `"persons"` are the parameters to be 
+#' fixed for identification (the default) or `"items"`. Each of these
+#' pinned parameters should be specified to `fix_high` and `fix_low`
+#' if `fixtype` equals `"prefix"`, otherwise the model will
+#' select the parameters to pin to fixed values.
+#' @param restrict_ind_high If `fixtype` is not "vb_full", a vector of character values or integer indices
+#' of a legislator/person or bill/item to pin to a high value (default +1).
+#' @param restrict_ind_low If `fixtype` is not "vb_full", a vector of character values or integer indices of a 
+#' legislator/person or bill/item to pin to a low value (default -1). 
+#' @param num_restrict_high If using variational inference for identification (`fixtype="vb_full"`),
+#' how many parameters to constraint to positive values? Default is 1.
+#' @param num_restrict_low If using variational inference for identification (`ixtype="vb_full"`),
+#' how many parameters to constraint to positive negative values? Default is 1.
+#' @param fix_high A vector of length `restrict_ind_high` with values 
+#' that the high fixed person ideal point(s) should be
+#' fixed to. Default is +2. Does not apply when `const_type="items"`; in that case,
+#' use `restrict_sd`/`restrict_N` parameters (see below).
+#' @param fix_low A vector of length `restrict_ind_low` with values 
+#' that the high fixed person ideal point(s) should be
+#' fixed to. Default is -2. Does not apply when `const_type="items"`; in that case,
+#' use `restrict_sd`/`restrict_N` parameters (see below).
+#' @param person_sd The standard deviation of the Normal distribution prior for 
+#' persons (all non-constrained person ideal point parameters). Default is weakly informative (3)
+#' on the logit scale.
+#' @param discrim_reg_upb Upper bound of the rescaled Beta distribution for 
+#' observed discrimination parameters (default is +1)
+#' @param discrim_reg_lb Lower bound of the rescaled Beta distribution for 
+#' observed discrimination parameters (default is -1). Set to 0 for 
+#' conventional IRT.
+#' @param discrim_miss_upb Upper bound of the rescaled Beta distribution for 
+#' missing discrimination parameters (default is +1)
+#' @param discrim_miss_lb Lower bound of the rescaled Beta distribution for 
+#' missing discrimination parameters (default is -1). Set to 0 for 
+#' conventional IRT.
+#' @param discrim_reg_scale Set the scale parameter for the rescaled Beta distribution
+#' of the discrimination parameters.
+#' @param discrim_reg_shape Set the shape parameter for the rescaled Beta distribution
+#' of the discrimination parameters.
+#' @param discrim_miss_scale Set the scale parameter for the rescaled Beta distribution
+#' of the missingness discrimination parameters.
+#' @param discrim_miss_shape Set the shape parameter for the rescaled Beta distribution
+#' of the missingness discrimination parameters.
+#' @param restrict_var Whether to fix the variance parameter for the first person trajectory. Default
+#' is FALSE (usually not necessary).
+#' @param time_fix_sd The variance of the over-time component of the first person/legislator
+#' is fixed to this value as a reference. 
+#' Default is 0.1.
+#' @param time_var The mean of the exponential distribution for over-time variances for
+#' ideal point parameters. Default (10) is weakly informative on the logit scale.
+#' @param ar1_up The upper bound of the AR(1) parameter, default is +1.
+#' @param ar1_down The lower bound of the AR(1) parameter, default is 0. Set to -1
+#' to allow for inverse responses to time shocks.
+#' @param spline_knots Number of knots (essentially, number of points
+#' at which to calculate time-varying ideal points given T time points). 
+#' Default is NULL, which means that the spline is equivalent to 
+#' polynomial time trend of degree `spline_degree`.
+#' Note that the spline number (if not null) must be equal or less than 
+#' the number of time points--and there is
+#' no reason to have it equal to the number of time points as that will likely 
+#' over-fit the data.
+#' @param spline_degree The degree of the spline polynomial. The default is 2 which is a 
+#' quadratic polynomial. A value of 1 will result in independent knots (essentially 
+#' pooled across time points T). A higher value will result in wigglier time series. 
+#' There is no "correct" value but lower values are likely more stable and easier to 
+#' identify.
+#' @param boundary_prior If your time series has very low variance (change over time),
+#' you may want to use this option to put a boundary-avoiding inverse gamma prior on
+#' the time series variance parameters if your model has a lot of divergent transitions. 
+#' To do so, pass a list with a element called 
+#' `beta` that signifies the rate parameter of the inverse-gamma distribution. 
+#' For example, try `boundary_prior=list(beta=1)`. Increasing the value of `beta`
+#' will increase the "push" away from zero. Setting it too high will result in 
+#' time series that exhibit a lot of "wiggle" without much need.
+#' @param time_center_cutoff The number of time points above which
+#' the model will employ a centered time series approach for AR(1)
+#' and random walk models. Below this number the model will employ a 
+#' non-centered approach. The default is 50 time points, which is 
+#' relatively arbitrary and higher values may be better if sampling
+#' quality is poor above the threshold.
 #' @param diff_reg_sd Set the prior standard deviation for the bill (item) intercepts for the non-inflated model.
 #' @param diff_miss_sd Set the prior standard deviation for the bill (item) intercepts for the inflated model.
-#' @param restrict_sd Set the prior standard deviation for constrained parameters
-#' @param restrict_var Whether to limit variance to no higher than 0.5 for random-walk time series models.
-#' If left blank (the default), will be set to \code{TRUE} for random-walk models and \code{FALSE} for 
-#' AR(1) models if identification is still a challenge (note: using this for AR(1) models is 
-#' probably overkill).
-#' @param restrict_var_high The upper limit for the variance parameter (if \code{restrict_var=TRUE} & 
-#' model is a random-walk time-series). If left blank, either defaults to 0.1 or is set by 
-#' identification model.
-#' @param restrict_mean Whether or not to restrict the over-time mean of an ideal point 
-#' (additional identification measure when standard fixes don't work). \code{TRUE} by 
-#' default for random-walk models.
-#' @param restrict_mean_val For random-walk models, the mean of a time-series ideal point to constrain.
-#' Should not be set a priori (leave blank) unless you are absolutely sure. Otherwise it is set by 
-#' the identification model.
-#' @param restrict_mean_ind For random-walk models, the ID of the person/group whose over-time
-#' mean to constrain. Should be left blank (will be set by identification model) unless you are 
-#' really sure.
-#' @param gp_sd_par The upper limit on allowed residual variation of the Gaussian process
-#' prior. Increasing the limit will permit the GP to more closely follow the time points, 
-#' resulting in much sharper bends in the function and potentially oscillation.
-#' @param gp_num_diff The number of time points to use to calculate the length-scale prior
-#' that determines the level of smoothness of the GP time process. Increasing this value
-#' will result in greater smoothness/autocorrelation over time by selecting a greater number
-#' of time points over which to calculate the length-scale prior.
-#' @param gp_m_sd_par The upper limit of the marginal standard deviation of the GP time 
-#' process. Decreasing this value will result in smoother fits.
-#' @param gp_min_length The minimum value of the GP length-scale parameter. This is a hard
-#' lower limit. Increasing this value will force a smoother GP fit. It should always be less than
-#' \code{gp_num_diff}.
-#' @param ... Additional parameters passed on to Stan's sampling engine. See \code{\link[rstan]{stan}} for more information.
-#' @return A fitted \code{\link{idealstan}} object that contains posterior samples of all parameters either via full Bayesian inference
-#' or a variational approximation if \code{use_vb} is set to \code{TRUE}. This object can then be passed to the plotting functions for further analysis.
-#' @seealso \code{\link{id_make}} for pre-processing data,
-#' \code{\link{id_plot_legis}} for plotting results,
-#' \code{\link{summary}} for obtaining posterior quantiles,
-#' \code{\link{posterior_predict}} for producing predictive replications.
+#' @param restrict_sd_high Set the level of tightness for high fixed parameters 
+#' (top/positive end of scale).
+#' If NULL, the default, will set to .1 if `const_type="persons"` and 
+#' 10 if `const_type="items"`. For `const_type="persons"`, value is the 
+#' SD of normal distribution centered around `fix_high`. For `const_type="items"`,
+#' parameter is equal to the prior shape for high pinned parameters 
+#' (divide by `restrict_N_high` + `restrict_sd_high`) to get expected value.
+#' @param restrict_sd_low Set the level of tightness for low fixed parameters 
+#' (low/negative end of scale).
+#' If NULL, the default, will set to .1 if `const_type="persons"` and 
+#' 10 if `const_type="items"`. For `const_type="persons"`, value is the 
+#' SD of normal distribution centered around `fix_low`. For `const_type="items"`,
+#' parameter is equal to the prior shape for high pinned parameters 
+#' (divide by `restrict_N_low` + `restrict_sd_low`) to get expected value.
+#' @param restrict_N_high Set the prior scale for high/positive pinned parameters. Default is 1000 
+#' (equivalent to 1,000 observations of the pinned value). Higher values make the pin
+#' stronger (for example if there is a lot of data).
+#' @param restrict_N_low Set the prior shape for low/negative pinned parameters. Default is 1000 
+#' (equivalent to 1,000 observations of the pinned value). Higher values make the pin stronger
+#' (for example if there is a lot of data).
+#' @param ordbeta_phi_mean The mean of the prior for phi, the dispersion parameter in the
+#' ordered beta distribution. Value of this parameter (default is 1) is given as the 
+#' mean of the exponential distribution for prior values of phi.
+#' @param ordbeta_cut_alpha A length 2 vector of positive continuous values for alpha 
+#' in the induced dirichlet distribution. This distribution is used for the cutpoints
+#' of the ordered beta distribution. Default is c(1,1), which is uninformative.
+#' @param ordbeta_cut_phi A value for the phi paremeter of the induced dirichlet distribution used for ordered beta cutpoint priors. Default is 0, which is weakly informative.
+#' @param gp_nugget The nugget of the squared-exponential kernel (equals additional
+#' variance of the GP-distributed ideal points)
+#' @param gp_alpha The mean of the exponential prior of the alpha parameters of the 
+#' GP squared-exponential kernel
+#' @param gp_rho The mean of the exponential prior of the rho parameters of the GP
+#' squared-exponential kernel
+#' @param cmdstan_path_user Default is NULL, and so will default to whatever is set in
+#' `cmdstanr` package. Specify a file path  here to use a different `cmdtstan`
+#' installation.
+#' @param save_files The location to save CSV files with MCMC draws from `cmdstanr`. 
+#' The default is `NULL`, which will use a folder in the package directory.
+#' @param compile_optim Whether to use Stan compile optimization flags (off by default)
+#' @param debug For debugging purposes, turns off threading to enable more informative
+#'   error messages from Stan. Also recompiles model objects.
+#' @param init_pathfinder Whether to generate initial values from the Pathfinder 
+#' algorithm (see Stan documentation). If FALSE, will generate random start values..
+#' @param debug_mode Whether to debug code by printing values of log-probability
+#' statements to the console. A level of 1 will print log-probability before
+#' and after likelihood functions are calculated. A level of 2 will also 
+#' print out the log probability contributions of priors. Default is 0.
+#' @param ... Additional parameters passed on to Stan's sampling engine. See [cmdstanr::sample] for more information.
+#' @return A fitted [idealstan()] object that contains posterior samples of all parameters either via full Bayesian inference
+#' or a variational approximation if `use_method` is set to `"pathfinder"` or `"laplace"`. This object can then be passed to the plotting functions for further analysis.
+#' @seealso [id_make()] for pre-processing data,
+#' [id_plot_persons()] for plotting results,
+#' [summary()] for obtaining posterior quantiles,
+#' [id_post_pred()] for producing predictive replications.
 #' @examples
+#' 
 #' # First we can simulate data for an IRT 2-PL model that is inflated for missing data
 #' library(ggplot2)
 #' library(dplyr)
 #' 
 #' # This code will take at least a few minutes to run 
-#' \dontrun{
-#' bin_irt_2pl_abs_sim <- id_sim_gen(model_type='binary',inflate=T)
+#' \donttest{
+#' bin_irt_2pl_abs_sim <- id_sim_gen(model_type='binary',inflate=TRUE)
 #' 
 #' # Now we can put that directly into the id_estimate function 
 #' # to get full Bayesian posterior estimates
@@ -617,15 +907,16 @@ id_make <- function(score_data=NULL,
 #' 
 #' bin_irt_2pl_abs_est <- id_estimate(bin_irt_2pl_abs_sim,
 #'                        model_type=2,
-#'                        restrict_ind_high = 
+#'                        use_method="pathfinder",
+#'                        restrict_ind_high =
 #'                        sort(bin_irt_2pl_abs_sim@simul_data$true_person,
 #'                        decreasing=TRUE,
 #'                        index=TRUE)$ix[1],
-#'                        restrict_ind_low = 
+#'                        restrict_ind_low =
 #'                        sort(bin_irt_2pl_abs_sim@simul_data$true_person,
 #'                        decreasing=FALSE,
 #'                        index=TRUE)$ix[1],
-#'                        fixtype='vb_partial',
+#'                        fixtype='prefix',
 #'                        ncores=2,
 #'                        nchains=2)
 #'                                    
@@ -643,416 +934,363 @@ id_make <- function(score_data=NULL,
 #' # We will use the full rollcall voting data 
 #' # from the 114th Senate as a rollcall object
 #' 
+#' \donttest{
+#' 
 #' data('senate114')
 #' 
 #' # Running this model will take at least a few minutes, even with 
-#' # variational inference (use_vb=T) turned on
-#' \dontrun{
+#' # variational inference (use_method="pathfinder") turned on
+#' 
+#' # first convert absences to NA values
+#' 
+#' senate114$cast_code[senate114$cast_code=="NA"] <- NA
+#' 
+#' # reset factor levels
+#' 
+#' senate114$cast_code <- factor(senate114$cast_code, 
+#'                               levels=c("No","Yes"))
 #' 
 #' to_idealstan <-   id_make(score_data = senate114,
-#' outcome = 'cast_code',
+#' outcome_disc = 'cast_code',
 #' person_id = 'bioname',
 #' item_id = 'rollnumber',
 #' group_id= 'party_code',
-#' time_id='date',
-#' high_val='Yes',
-#' low_val='No',
-#' miss_val='Absent')
+#' time_id='date')
 #' 
 #' sen_est <- id_estimate(to_idealstan,
 #' model_type = 2,
-#' use_vb = TRUE,
-#' fixtype='vb_partial',
+#' use_method = "pathfinder",
+#' fixtype='prefix',
 #' restrict_ind_high = "BARRASSO, John A.",
 #' restrict_ind_low = "WARREN, Elizabeth")
 #' 
 #' # After running the model, we can plot 
 #' # the results of the person/legislator ideal points
 #' 
-#' id_plot_legis(sen_est)
+#' id_plot_persons(sen_est)
 #' }
-#' 
+#'
 #' @references \enumerate{
-#'    \item Clinton, J., Jackman, S., & Rivers, D. (2004). The Statistical Analysis of Roll Call Data. \emph{The American Political Science Review}, 98(2), 355-370. doi:10.1017/S0003055404001194
-#'    \item Bafumi, J., Gelman, A., Park, D., & Kaplan, N. (2005). Practical Issues in Implementing and Understanding Bayesian Ideal Point Estimation. \emph{Political Analysis}, 13(2), 171-187. doi:10.1093/pan/mpi010
+#'    \item Clinton, J., Jackman, S., & Rivers, D. (2004). The Statistical Analysis of Roll Call Data. *The American Political Science Review*, 98(2), 355-370. doi:10.1017/S0003055404001194
+#'    \item Bafumi, J., Gelman, A., Park, D., & Kaplan, N. (2005). Practical Issues in Implementing and Understanding Bayesian Ideal Point Estimation. *Political Analysis*, 13(2), 171-187. doi:10.1093/pan/mpi010
 #'    \item Kubinec, R. "Generalized Ideal Point Models for Time-Varying and Missing-Data Inference". Working Paper.
 #'    \item Betancourt, Michael. "Robust Gaussian Processes in Stan". (October 2017). Case Study.
 #' }
-#' @importFrom stats dnorm dpois model.matrix qlogis relevel rpois update
-#' @importFrom utils person
+#' @importFrom stats dnorm dpois model.matrix qlogis relevel rpois update aggregate dlnorm end formula start
+#' @importFrom utils person packageDescription install.packages
+#' @importFrom posterior as_draws_rvars ess_bulk ess_tail
+#' @importFrom bayesplot mcmc_intervals
+#' @importFrom rlang check_installed is_installed
 #' @export
 id_estimate <- function(idealdata=NULL,model_type=2,
                         inflate_zero=FALSE,
                         vary_ideal_pts='none',
+                        seed=NULL,
+                        keep_param=NULL,
+                        grainsize=1,
+                        mpi_export=NULL,
                         use_subset=FALSE,sample_it=FALSE,
-                           subset_group=NULL,subset_person=NULL,sample_size=20,
-                           nchains=4,niters=2000,use_vb=FALSE,
-                           restrict_ind_high=NULL,
-                          id_diff=4,
-                        id_diff_high=2,
-                           restrict_ind_low=NULL,
-                           fixtype='vb_full',
+                        subset_group=NULL,subset_person=NULL,sample_size=20,
+                        nchains=4,niters=1000,use_method="mcmc",
+                        ignore_db=NULL,
+                        restrict_ind_high=NULL,
+                        fix_high=2,
+                        fix_low=(-2),
+                        restrict_ind_low=NULL,
+                        num_restrict_high=1,
+                        num_restrict_low=1,
+                        fixtype='prefix',
+                        const_type="persons",
                         id_refresh=0,
-                        prior_fit=NULL,
-                        warmup=floor(niters/2),ncores=4,
+                        prior_only=FALSE,
+                        warmup=1000,ncores=4,
                         use_groups=FALSE,
-                           discrim_reg_sd=2,
-                           discrim_miss_sd=2,
-                           person_sd=1,
-                        time_sd=.1,
-                        sample_stationary=FALSE,
-                        ar_sd=2,
-                           diff_reg_sd=1,
-                           diff_miss_sd=1,
-                           restrict_sd=0.01,
-                        restrict_mean=NULL,
-                        restrict_var=NULL,
-                        restrict_mean_val=NULL,
-                        restrict_mean_ind=NULL,
-                        restrict_var_high=0.1,
-                        tol_rel_obj=.001,
-                        gp_sd_par=.025,
-                        gp_num_diff=c(3,0.01),
-                        gp_m_sd_par=c(0.3,10),
-                        gp_min_length=0,
-                           ...) {
+                        discrim_reg_upb=1,
+                        discrim_reg_lb=-1,
+                        discrim_miss_upb=1,
+                        discrim_miss_lb=-1,
+                        discrim_reg_scale=2,
+                        discrim_reg_shape=2,
+                        discrim_miss_scale=2,
+                        discrim_miss_shape=2,
+                        person_sd=3,
+                        time_fix_sd=.1,
+                        time_var=10,
+                        spline_knots=NULL,
+                        spline_degree=2,
+                        ar1_up=1,
+                        ar1_down=-1,
+                        boundary_prior=NULL,
+                        time_center_cutoff=50,
+                        restrict_var=FALSE,
+                        ar_prior=c(2,2),
+                        diff_reg_sd=3,
+                        diff_miss_sd=3,
+                        restrict_sd_high=NULL,
+                        restrict_sd_low=NULL,
+                        restrict_N_high=1000,
+                        restrict_N_low=1000,
+                        ordbeta_phi_mean=1,
+                        ordbeta_cut_alpha=c(1,1,1),
+                        ordbeta_cut_phi=0,
+                        gp_nugget=.1,
+                        gp_rho=.5,
+                        gp_alpha=.5,
+                        cmdstan_path_user=NULL,
+                        map_over_id="persons",
+                        save_files=NULL,
+                        compile_optim=FALSE,
+                        debug=FALSE,
+                        init_pathfinder=TRUE,
+                        debug_mode=0,
+                        ...) {
+  
+  # check for correct use_method option
 
+  if(!(use_method) %in% c("mcmc","pathfinder","laplace")) stop("You have entered a value for use_method that is not supported. At present the estimation routines are 'mcmc', 'pathfinder', or 'laplace'. Please see the associated working paper for more details at https://osf.io/preprints/osf/8j2bt_v3")
 
-  
-  if(use_subset==TRUE || sample_it==TRUE) {
-    idealdata <- subset_ideal(idealdata,use_subset=use_subset,sample_it=sample_it,subset_group=subset_group,
-                              subset_person=subset_person,sample_size=sample_size)
-  }
-  
+  # Check if cmdstanr is installed first (before attempting check_installed)
+  # This prevents errors in non-interactive sessions
 
-    idealdata@stanmodel <- stanmodels[['irt_standard']]
-    
-  # currently fixed at one param, can change in future versions
-    
-  nfix <- 1
-   
-    #Using an un-identified model with variational inference, find those parameters that would be most useful for
-    #constraining/pinning to have an identified model for full Bayesian inference
-  
-  # change time IDs if non time-varying model is being fit
-  if(vary_ideal_pts=='none') {
-    idealdata@score_matrix$time_id <- 1
-    # make sure that the covariate arrays are only one time point
-    #idealdata@person_cov <- idealdata@person_cov[1,,,drop=F]
-    #idealdata@group_cov <- idealdata@group_cov[1,,,drop=F]
-  } 
-  
-  vary_ideal_pts <- switch(vary_ideal_pts,
-                           none=1,
-                           random_walk=2,
-                           AR1=3,
-                           GP=4)
-  
-  # set GP parameters
-  
-  if(vary_ideal_pts==4) {
-    # convert multiplicity factor to total length of the data
-    # use real time points instead of just counting number of points
-    gp_num_diff[1] <- mean(as.numeric(idealdata@score_matrix$time_id))*gp_num_diff[1]
-  }
-    
-  # use either row numbers for person/legislator IDs or use group IDs (static or time-varying)
-      
-  if(use_groups==T) {
-    legispoints <- as.numeric(idealdata@score_matrix$group_id)
-    num_legis <- max(legispoints)
-  } else {
-    legispoints <- as.numeric(idealdata@score_matrix$person_id)
-    num_legis <- max(legispoints)
-  }
+  if(!is_installed("cmdstanr")) {
 
-  billpoints <- as.numeric(idealdata@score_matrix$item_id)
-  timepoints <- as.numeric(factor(idealdata@score_matrix$time_id))
-  # for gaussian processes, need actual time values
-  time_ind <- switch(class(idealdata@score_matrix$time_id)[1],
-                     factor=unique(as.numeric(idealdata@score_matrix$time_id)),
-                     Date=unique(as.numeric(idealdata@score_matrix$time_id)),
-                     POSIXct=unique(as.numeric(idealdata@score_matrix$time_id)),
-                     POSIXlt=unique(as.numeric(idealdata@score_matrix$time_id)),
-                     numeric=unique(idealdata@score_matrix$time_id),
-                     integer=unique(idealdata@score_matrix$time_id))
-  
-  # now need to generate max/min values for empirical length-scale prior in GP
-  if(gp_min_length>=gp_num_diff[1]) {
-    stop('The parameter gp_min_length cannot be equal to or greater than gp_num_diff[1].')
-  }
-  
-  max_t <- max(timepoints,na.rm=T)
-  num_bills <- max(billpoints,na.rm=T)
+    # In interactive sessions, offer to install
+    if(interactive()) {
 
-  Y <- idealdata@score_matrix$outcome
-  
-  # check to see if we need to recode missing values from the data if the model_type doesn't handle missing data
-  if(model_type %in% c(1,3,5,7,9,11,13) & !is.na(idealdata@miss_val)) {
-    Y <- .na_if(Y,idealdata@miss_val)
-  }
-  
-  # check to see if more values than there should be for the bernoulli model
-  
-  if(model_type %in% c(1,13) && length(table(Y))>2) {
-    stop('Too many values in score matrix for a binary model. Choose a different model_type.')
-  } else if(model_type %in% c(2,14) && length(table(Y))>3) {
-    stop("Too many values in score matrix for a binary model. Choose a different model_type.")
-  }
-
-  #Remove NA values, which should have been coded correctly in the make_idealdata function
-  
-    remove_nas <- !is.na(Y) & !is.na(legispoints) & !is.na(billpoints) & !is.na(timepoints)
-    Y <- Y[remove_nas]
-
-    legispoints <- legispoints[remove_nas]
-    billpoints <- billpoints[remove_nas]
-    timepoints <- timepoints[remove_nas]
-    
-  if(model_type>8 && model_type < 13) {
-    N_cont <- length(Y)
-    N_int <- 1L
-    Y_cont <- as.numeric(Y)
-    Y_int <- array(1L)
-  } else {
-    N_cont <- 1L
-    N_int <- length(Y)
-    Y_cont <- array(1)
-    Y_int <- as.integer(Y)
-  }
-    
-  # set identification options
-    
-  if(length(idealdata@restrict_var)==0 && is.null(prior_fit) && is.null(restrict_var)) {
-      if(vary_ideal_pts %in% c(1,3)) {
-        idealdata@restrict_var <- FALSE
-      } else {
-        idealdata@restrict_var <- TRUE
+      install_cmdstanr <- function(pkg, ...) {
+        install.packages(pkg, repos = c('https://stan-dev.r-universe.dev'))
       }
-  } else if(length(idealdata@restrict_var)>0 && !is.null(prior_fit)) {
-    # reset if a prior fit is being used for ID
-    if(!is.null(restrict_var)) {
-      idealdata@restrict_var <- restrict_var
-    } else {
-      if(vary_ideal_pts %in% c(1,3)) {
-        idealdata@restrict_var <- FALSE
-      } else {
-        idealdata@restrict_var <- TRUE
-      } 
-    }
-  } else if(length(idealdata@restrict_var)==0 && !is.null(restrict_var)) {
-    idealdata@restrict_var <- restrict_var
-  }
 
-  # add in restrictions if they weren't identified by VB
-    
-  if(length(idealdata@restrict_var_high)==0 && !is.null(restrict_var_high)) {
-      idealdata@restrict_var_high <- restrict_var_high
-  } else if(length(idealdata@restrict_var_high)==0 && is.null(restrict_var_high)) {
-      idealdata@restrict_var_high <- 1
-  }
-    
-  if(length(idealdata@restrict_mean_val)==0 && !is.null(restrict_mean_val)) {
-      idealdata@restrict_mean_val <- restrict_mean_val
-  } else if(length(idealdata@restrict_mean_val)==0 && is.null(restrict_mean_val)) {
-    idealdata@restrict_mean_val <- c(1,1)
-  }
-    
-  if(length(idealdata@restrict_mean_ind)==0 && !is.null(restrict_mean_ind)) {
-      idealdata@restrict_mean_ind <- restrict_mean_ind
-  } else if(length(idealdata@restrict_mean_ind)==0 && is.null(restrict_mean_ind)) {
-    idealdata@restrict_mean_ind <- rep(1,8)
-  }
-    
-  if(length(idealdata@restrict_mean)>0 && vary_ideal_pts==3 && !is.null(prior_fit)) {
-    
-    # reset if a prior time-varying fit is being used
-    if(is.null(restrict_mean)) {
-      idealdata@restrict_mean <- FALSE
+      check_installed("cmdstanr",
+                      version="0.8.1",
+                      reason="idealstan requires the package cmdstanr to run. This package is available from an external repository, https://stan-dev.r-universe.dev.",
+                      action=install_cmdstanr)
+
+      # Check again after potential installation
+      if(!is_installed("cmdstanr")) {
+        message("The R package cmdstanr is not installed so idealstan cannot estimate models. Please go to https://mc-stan.org/cmdstanr/ for installation instructions for the package cmdstanr.")
+        return(NULL)
+      }
+
     } else {
-      idealdata@restrict_mean <- restrict_mean
+      # Non-interactive: just return NULL with message
+      message("The R package cmdstanr is not installed so idealstan cannot estimate models. Please go to https://mc-stan.org/cmdstanr/ for installation instructions for the package cmdstanr.")
+      return(NULL)
     }
+  }
+  
+  # only allow estimation to proceed if cmdstan is also installed
+  
+  if(is.null(
+    cmdstanr::cmdstan_version(error_on_NA = FALSE))) {
     
-  } else if(length(idealdata@restrict_mean)==0 && !is.null(restrict_mean)) {
-    idealdata@restrict_mean <- restrict_mean
+    message("R package cmdstanr is installed but cmdstan is not yet installed & set up. Please load the R package cmdstanr and use function install_cmdstan() to install cmdstan on your local machine. For more information, see https://mc-stan.org/cmdstanr/.")
+    
+    return(NULL)
+    
+  }
+  
+  # don't allow user to change this
+  
+  het_var <- TRUE
+  
+  
+  # check to make sure cmdstanr is working
+  
+  if(is.null(cmdstanr::cmdstan_version())) {
+    message("You need to install cmdstan with cmdstanr to compile models. Use the function install_cmdstan() in the cmdstanr package.")
+  }
+  
+  # set path if user specifies
+  if(!is.null(cmdstan_path_user))
+    cmdstanr::set_cmdstan_path(cmdstan_path_user)
+  
+  if(!file.exists(system.file("stan_files","irt_standard_map",
+                              package="idealstan"))) {
+    message("Compiling model. Will take some time as this is the first time the package has been used.")
+    message("Have you thought about donating to relief for victims of Yemen's famine?")
+    message("Check out https://www.unicef.org/emergencies/yemen-crisis for more info.")
+  }
+  
+  stan_code_map <- system.file("stan_files","irt_standard_map.stan",
+                               package="idealstan")
+  
+  # stan_code_gpu <- system.file("stan_files","irt_standard_gpu.stan",
+  #                              package="idealstan")
+  # 
+  if(compile_optim) {
+
+    idealdata@stanmodel_map <- stan_code_map %>%
+      cmdstanr::cmdstan_model(include_paths=dirname(stan_code_map),
+                    cpp_options = list(stan_threads = !debug,
+                                       STAN_CPP_OPTIMS=TRUE),
+                    force_recompile=debug)
+    
+    # idealdata@stanmodel_gpu <- stan_code_gpu %>%
+    #   cmdstan_model(include_paths=dirname(stan_code_map),
+    #                 cpp_options = list(stan_threads = !debug,
+    #                                    STAN_CPP_OPTIMS=TRUE,
+    #                                    STAN_OPENCL=TRUE,
+    #                                    opencl_platform_id = 0,
+    #                                    opencl_device_id = 0),
+    #                 force_recompile=debug)
+    
+  } else {
+
+    idealdata@stanmodel_map <- stan_code_map %>%
+      cmdstanr::cmdstan_model(include_paths=dirname(stan_code_map),
+                    cpp_options = list(stan_threads = !debug),
+                    force_recompile=debug)
+    
+    # for pathfinder
+    
+    # idealdata@stanmodel_gpu <- stan_code_gpu %>%
+    #   cmdstan_model(include_paths=dirname(stan_code_map),
+    #                 cpp_options = list(stan_threads = !debug,
+    #                                    STAN_OPENCL=TRUE,
+    #                                    opencl_platform_id = 0,
+    #                                    opencl_device_id = 0),
+    #                 force_recompile=debug)
+    
+    
+  }
+  
+  # add in default arguments if missing
+  
+  if(is.null(restrict_sd_high)) {
+    
+    if(const_type=="persons") {
       
-  } else if(length(idealdata@restrict_mean)==0 && is.null(restrict_mean)) {
-    if(vary_ideal_pts %in% c(1,3)) {
-      idealdata@restrict_mean <- FALSE
+      restrict_sd_high <- .1
+      
     } else {
-      idealdata@restrict_mean <- TRUE
+      
+      restrict_sd_high <- 10
+      
     }
-  }
     
-  this_data <- list(N=length(Y),
-                    N_cont=N_cont,
-                    N_int=N_int,
-                    Y_int=Y_int,
-                    Y_cont=Y_cont,
-                    T=max_t,
-                    num_legis=num_legis,
-                    num_bills=num_bills,
-                    ll=legispoints,
-                    bb=billpoints,
-                    num_fix_high=as.integer(1),
-                    num_fix_low=as.integer(1),
-                    LX=length(idealdata@person_cov),
-                    SRX=length(idealdata@item_cov),
-                    SAX=length(idealdata@item_cov_miss),
-                    legis_pred=as.matrix(select(idealdata@score_matrix,
-                                                idealdata@person_cov))[remove_nas,,drop=F],
-                    srx_pred=as.matrix(select(idealdata@score_matrix,
-                                              idealdata@item_cov))[remove_nas,,drop=F],
-                    sax_pred=as.matrix(select(idealdata@score_matrix,
-                                              idealdata@item_cov_miss))[remove_nas,,drop=F],
-                    time=timepoints,
-                    model_type=model_type,
-                    discrim_reg_sd=discrim_reg_sd,
-                    discrim_abs_sd=discrim_miss_sd,
-                    diff_reg_sd=diff_reg_sd,
-                    diff_abs_sd=diff_miss_sd,
-                    legis_sd=1,
-                    restrict_sd=restrict_sd,
-                    time_proc=vary_ideal_pts,
-                    diff=idealdata@diff,
-                    diff_high=idealdata@diff_high,
-                    time_sd=time_sd,
-                    ar_sd=ar_sd,
-                    restrict_var=idealdata@restrict_var,
-                    restrict_var_high=idealdata@restrict_var_high,
-                    restrict_mean=idealdata@restrict_mean,
-                    restrict_mean_val=idealdata@restrict_mean_val,
-                    restrict_mean_ind=idealdata@restrict_mean_ind,
-                    zeroes=inflate_zero,
-                    time_ind=as.array(time_ind),
-                    time_proc=vary_ideal_pts,
-                    gp_sd_par=gp_sd_par,
-                    num_diff=gp_num_diff,
-                    m_sd_par=gp_m_sd_par,
-                    min_length=gp_min_length,
-                    id_refresh=id_refresh)
-
-  idealdata <- id_model(object=idealdata,fixtype=fixtype,model_type=model_type,this_data=this_data,
-                        nfix=nfix,restrict_ind_high=restrict_ind_high,
-                        restrict_ind_low=restrict_ind_low,
-                        ncores=ncores,
-                        tol_rel_obj=tol_rel_obj,
-                        use_groups=use_groups,
-                        prior_fit=prior_fit)
-
-  # if diff hasn't been set yet, set it
-  
-  if(length(idealdata@diff_high)==0) {
-      idealdata@diff <- id_diff
-      idealdata@diff_high <- id_diff_high
   }
   
-  # now run an identified run
-  # repeat data formation as positions of rows/columns may have shifted
-  if(use_groups==T) {
-    legispoints <- as.numeric(idealdata@score_matrix$group_id)
-    num_legis <- max(legispoints)
-  } else {
-    legispoints <- as.numeric(idealdata@score_matrix$person_id)
-    num_legis <- max(legispoints)
+  if(is.null(restrict_sd_low)) {
+    
+    if(const_type=="persons") {
+      
+      restrict_sd_low <- .1
+      
+    } else {
+      
+      restrict_sd_low <- 10
+      
+    }
+    
   }
   
-  billpoints <- as.numeric(idealdata@score_matrix$item_id)
-  timepoints <- as.numeric(factor(idealdata@score_matrix$time_id))
-  # for gaussian processes, need actual time values
-  time_ind <- switch(class(idealdata@score_matrix$time_id)[1],
-                     factor=unique(as.numeric(idealdata@score_matrix$time_id)),
-                     Date=unique(as.numeric(idealdata@score_matrix$time_id)),
-                     POSIXct=unique(as.numeric(idealdata@score_matrix$time_id)),
-                     POSIXlt=unique(as.numeric(idealdata@score_matrix$time_id)),
-                     numeric=unique(idealdata@score_matrix$time_id),
-                     integer=unique(idealdata@score_matrix$time_id))
-  max_t <- max(timepoints,na.rm=T)
-  num_bills <- max(billpoints,na.rm=T)
   
-  Y <- idealdata@score_matrix$outcome
+  # load and process data, return list to send to cmdstanr
   
-  # check to see if we need to recode missing values from the data if the model_type doesn't handle missing data
-  if(model_type %in% c(1,3,5,7,9,11,13) & !is.na(idealdata@miss_val)) {
-    Y <- .na_if(Y,idealdata@miss_val)
-  }
+  # Pass all arguments to the second function
+  # make a list so we can save it for later
   
-  #Remove NA values, which should have been coded correctly in the make_idealdata function
+  eval_data_args <- list(idealdata=idealdata,
+                         inflate_zero=inflate_zero,
+                         model_type=model_type,
+                         vary_ideal_pts=vary_ideal_pts,
+                         keep_param=keep_param,
+                         grainsize=grainsize,
+                         use_subset=use_subset,sample_it=sample_it,
+                         subset_group=subset_group,subset_person=subset_person,
+                         sample_size=sample_size,
+                         ignore_db=ignore_db,
+                         restrict_ind_high=restrict_ind_high,
+                         fix_high=fix_high,
+                         fix_low=fix_low,
+                         restrict_ind_low=restrict_ind_low,
+                         fixtype=fixtype,
+                         const_type=const_type,
+                         id_refresh=id_refresh,
+                         prior_only=prior_only,
+                         use_groups=use_groups,
+                         discrim_reg_upb=discrim_reg_upb,
+                         discrim_reg_lb=discrim_reg_lb,
+                         discrim_miss_upb=discrim_miss_upb,
+                         discrim_miss_lb=discrim_miss_lb,
+                         discrim_reg_scale=discrim_reg_scale,
+                         discrim_reg_shape=discrim_reg_shape,
+                         discrim_miss_scale=discrim_miss_scale,
+                         discrim_miss_shape=discrim_miss_shape,
+                         person_sd=person_sd,
+                         time_fix_sd=time_fix_sd,
+                         time_var=time_var,
+                         spline_knots=spline_knots,
+                         spline_degree=spline_degree,
+                         ar1_up=ar1_up,
+                         ncores=ncores,
+                         ar1_down=ar1_down,
+                         boundary_prior=boundary_prior,
+                         time_center_cutoff=time_center_cutoff,
+                         restrict_var=restrict_var,
+                         ar_prior=ar_prior,
+                         diff_reg_sd=diff_reg_sd,
+                         diff_miss_sd=diff_miss_sd,
+                         restrict_sd_high=restrict_sd_high,
+                         restrict_sd_low=restrict_sd_low,
+                         restrict_N_high=restrict_N_high,
+                         restrict_N_low=restrict_N_low,
+                         gp_nugget=gp_nugget,
+                         gp_rho=gp_rho,
+                         gp_alpha=gp_alpha,
+                         map_over_id=map_over_id,
+                         het_var=het_var, 
+                         debug_mode=debug_mode,
+                         num_restrict_high=num_restrict_high,
+                         num_restrict_low=num_restrict_low,
+                         ordbeta_phi_mean=ordbeta_phi_mean,
+                         ordbeta_cut_alpha=ordbeta_cut_alpha,
+                         ordbeta_cut_phi=ordbeta_cut_phi)
   
-  remove_nas <- !is.na(Y) & !is.na(legispoints) & !is.na(billpoints) & !is.na(timepoints)
-  Y <- Y[remove_nas]
-  legispoints <- legispoints[remove_nas]
-  billpoints <- billpoints[remove_nas]
-  timepoints <- timepoints[remove_nas]
+  all_data <- do.call(.make_stan_data,eval_data_args)
   
-  if(model_type>8 && model_type < 13) {
-    N_cont <- length(Y)
-    N_int <- 1
-    Y_cont <- as.numeric(Y)
-    Y_int <- array(1L)
-  } else {
-    N_cont <- 1
-    N_int <- length(Y)
-    Y_cont <- array(1L)
-    Y_int <- as.integer(Y)
-  }
+  this_data <- all_data$stan_data
+  remove_list <- all_data$remove_list
+  idealdata <- all_data$idealdata
+  out_list <- all_data$out_list
   
-  this_data <- list(N=length(Y),
-                    N_cont=N_cont,
-                    N_int=N_int,
-                    Y_int=Y_int,
-                    Y_cont=Y_cont,
-                    T=max_t,
-                    num_legis=num_legis,
-                    num_bills=num_bills,
-                    ll=legispoints,
-                    bb=billpoints,
-                    num_fix_high=as.integer(1),
-                    num_fix_low=as.integer(1),
-                    LX=length(idealdata@person_cov),
-                    SRX=length(idealdata@item_cov),
-                    SAX=length(idealdata@item_cov_miss),
-                    legis_pred=as.matrix(select(idealdata@score_matrix,
-                                                idealdata@person_cov))[remove_nas,,drop=F],
-                    srx_pred=as.matrix(select(idealdata@score_matrix,
-                                              idealdata@item_cov))[remove_nas,,drop=F],
-                    sax_pred=as.matrix(select(idealdata@score_matrix,
-                                              idealdata@item_cov_miss))[remove_nas,,drop=F],
-                    time=timepoints,
-                    time_proc=vary_ideal_pts,
-                    model_type=model_type,
-                    discrim_reg_sd=discrim_reg_sd,
-                    discrim_abs_sd=discrim_miss_sd,
-                    diff_reg_sd=diff_reg_sd,
-                    diff_abs_sd=diff_miss_sd,
-                    legis_sd=person_sd,
-                    restrict_sd=restrict_sd,
-                    diff=idealdata@diff,
-                    diff_high=idealdata@diff_high,
-                    time_sd=time_sd,
-                    ar_sd=ar_sd,
-                    restrict_var=idealdata@restrict_var,
-                    restrict_var_high=idealdata@restrict_var_high,
-                    restrict_mean_val=idealdata@restrict_mean_val,
-                    restrict_mean_ind=idealdata@restrict_mean_ind,
-                    restrict_mean=idealdata@restrict_mean,
-                    zeroes=inflate_zero,
-                    time_ind=as.array(time_ind),
-                    time_proc=vary_ideal_pts,
-                    gp_sd_par=gp_sd_par,
-                    num_diff=gp_num_diff,
-                    m_sd_par=gp_m_sd_par,
-                    min_length=gp_min_length,
-                    id_refresh=id_refresh)
-
+  # need to save n_cats
+  
+  idealdata@n_cats_rat <- remove_list$n_cats_rat
+  idealdata@n_cats_grm <- remove_list$n_cats_grm
+  idealdata@order_cats_rat <- remove_list$order_cats_rat
+  idealdata@order_cats_grm <- remove_list$order_cats_grm
+  
   outobj <- sample_model(object=idealdata,nchains=nchains,niters=niters,warmup=warmup,ncores=ncores,
-                         this_data=this_data,use_vb=use_vb,
-                         tol_rel_obj=tol_rel_obj,
+                         this_data=this_data,use_method=use_method,
+                         save_files=save_files,
+                         keep_param=keep_param,
+                         within_chain=within_chain,
+                         init_pathfinder=init_pathfinder,
+                         seed=seed,
                          ...)
   
   outobj@model_type <- model_type
-  outobj@time_proc <- vary_ideal_pts
+  outobj@time_proc <- this_data$time_proc
   outobj@use_groups <- use_groups
+  outobj@map_over_id <- map_over_id
+  outobj@time_fix_sd <- time_fix_sd
+  outobj@restrict_var <- restrict_var
+  outobj@time_center_cutoff <- time_center_cutoff
+  outobj@orig_order <- out_list$this_data$orig_order
+  outobj@this_data <- this_data
+  outobj@remove_nas <- remove_list$remove_nas
+  outobj@eval_data_args <- eval_data_args
+  outobj@use_method <- use_method
+  
+  # need to recalculate legis points if time series used
+  if(this_data$T>1 && ((!is.null(keep_param$person_vary) && keep_param$person_vary) || is.null(keep_param))) {
+    outobj@time_varying <- try(.get_varying(outobj,
+                                            person_id=this_data$ll,
+                                            time_id=this_data$time))
+  }
+  
   return(outobj)
   
 }

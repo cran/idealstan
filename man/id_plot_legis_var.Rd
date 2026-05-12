@@ -4,11 +4,22 @@
 \alias{id_plot_legis_var}
 \title{Plot Legislator/Person Over-time Variances}
 \usage{
-id_plot_legis_var(object, return_data = FALSE, include = NULL,
-  high_limit = 0.95, low_limit = 0.05, text_size_label = 2,
-  text_size_group = 2.5, point_size = 1, hjust_length = -0.7,
-  person_labels = TRUE, group_labels = F, person_ci_alpha = 0.1,
-  group_color = TRUE, ...)
+id_plot_legis_var(
+  object,
+  return_data = FALSE,
+  include = NULL,
+  high_limit = 0.95,
+  low_limit = 0.05,
+  text_size_label = 2,
+  text_size_group = 2.5,
+  point_size = 1,
+  hjust_length = -0.7,
+  person_labels = TRUE,
+  group_labels = FALSE,
+  person_ci_alpha = 0.1,
+  group_color = TRUE,
+  ...
+)
 }
 \arguments{
 \item{object}{A fitted \code{idealstan} object}
@@ -39,39 +50,34 @@ id_plot_legis_var(object, return_data = FALSE, include = NULL,
 
 \item{...}{Other options passed on to plotting function, currently ignored}
 }
+\value{
+A \code{ggplot2} object showing person/legislator over-time variance in ideal points as a dot
+plot with posterior intervals. If \code{return_data=TRUE}, a list with elements \code{plot} and \code{data}.
+}
 \description{
-This function can be used on a fitted \code{idealstan} object to plot the over-time variances 
+This function can be used on a fitted \code{idealstan} object to plot the over-time variances
 (average rates of change in ideal points) for all the persons/legislators in the model.
 }
 \details{
 This function will plot the person/legislator over-time variances as a vertical
-dot plot with associated high-density posterior interval (can be changed 
+dot plot with associated high-density posterior interval (can be changed
 with \code{high_limit} and \code{low_limit} options).
 }
 \examples{
-
-# To demonstrate, we load the 114th Senate data and fit a time-varying model
-
-data('senate114_fit')
-
-\dontrun{
-senate_data <- id_make(senate114,outcome = 'cast_code',
-person_id = 'bioname',
-item_id = 'rollnumber',
-group_id= 'party_code',
-time_id='date',
-miss_val='Absent')
-
- senate114_time_fit <- id_estimate(senate_data,
- model_type = 2,
- use_vb = T,
- fixtype='vb_partial',
- vary_ideal_pts='random_walk',
- restrict_ind_high = "WARREN, Elizabeth",
- restrict_ind_low="BARRASSO, John A.",
- seed=84520)
-# We plot the variances for all the Senators
-
-id_plot_legis_var(senate114_fit)
+\donttest{
+data('senate114')
+senate114$cast_code <- ifelse(senate114$cast_code=="Absent", NA,
+                              as.integer(senate114$cast_code) - 1L)
+senate_data <- id_make(senate114, outcome_disc='cast_code',
+                       person_id='bioname', item_id='rollnumber',
+                       group_id='party_code', time_id='date')
+senate_time_fit <- id_estimate(senate_data,
+                               model_type=2, fixtype='vb_full',
+                               vary_ideal_pts='random_walk',
+                               use_method="pathfinder",
+                               restrict_ind_high="WARREN, Elizabeth",
+                               restrict_ind_low="BARRASSO, John A.",
+                               nchains=2, ncores=4)
+id_plot_legis_var(senate_time_fit)
 }
 }

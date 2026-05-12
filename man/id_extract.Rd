@@ -11,6 +11,26 @@ id_extract(object, ...)
 
 \item{...}{Other arguments passed on to underlying functions}
 }
+\value{
+A \code{\link[tibble]{tibble}} of posterior draws, with rows as draws and columns as parameters.
+}
 \description{
 This is a generic function.
+}
+\details{
+This generic will extract the full \code{\link[rstan]{stan}} posterior samples from \code{idealstan} objects.
+
+See the corresponding method definition for more information about what you can acccess with this generic.
+}
+\examples{
+\donttest{
+data('senate114')
+senate114$cast_code <- ifelse(senate114$cast_code=="Absent", NA,
+                              as.integer(senate114$cast_code) - 1L)
+sen_data <- id_make(senate114, outcome_disc='cast_code',
+                    person_id='bioname', item_id='rollnumber',
+                    group_id='party_code')
+sen_est <- id_estimate(sen_data, model_type=1, fixtype='vb_full', use_method="pathfinder", ncores=4)
+id_extract(sen_est, extract_type='persons')
+}
 }

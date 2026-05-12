@@ -8,11 +8,25 @@ Returns a data frame with RMSE plus quantiles.}
 id_sim_rmse(obj, rep = 1)
 }
 \arguments{
-\item{obj}{A fitted \code{idealstan} object with true data from \code{\link{id_sim_gen}}}
+\item{obj}{A fitted \code{idealstan} object with true data from \code{\link[=id_sim_gen]{id_sim_gen()}}}
 
 \item{rep}{Over how many replicates to calculate RMSE? Currently can only be 1}
+}
+\value{
+A named list of \code{\link[tibble]{tibble}} objects, one per parameter type
+(\code{Ideal Points}, \code{Absence Discriminations}, \code{Item Discrimations}), each with
+columns \code{avg}, \code{high}, \code{low}, \code{Params}, \code{est_type}, and \code{iter}
+summarising RMSE relative to true parameter values.
 }
 \description{
 RMSE function for calculating individual RMSE values compared to true simulation scores
 Returns a data frame with RMSE plus quantiles.
+}
+\examples{
+\donttest{
+sim <- id_sim_gen()
+est <- id_estimate(sim, model_type=1, fixtype='vb_full',
+                   use_method="pathfinder", nchains=2, ncores=2)
+id_sim_rmse(est)
+}
 }

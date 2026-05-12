@@ -5,10 +5,18 @@
 \title{Function to compare two fitted idealstan models by plotting ideal points. Assumes that underlying data
 is the same for both models.}
 \usage{
-id_plot_compare(model1 = NULL, model2 = NULL, scale_flip = FALSE,
-  return_data = FALSE, labels = NULL, hjust = -0.1,
-  palette = "Set1", color_direction = 1, text_size_label = 2,
-  rescale = FALSE)
+id_plot_compare(
+  model1 = NULL,
+  model2 = NULL,
+  scale_flip = FALSE,
+  return_data = FALSE,
+  labels = NULL,
+  hjust = -0.1,
+  palette = "Set1",
+  color_direction = 1,
+  text_size_label = 2,
+  rescale = FALSE
+)
 }
 \arguments{
 \item{model1}{The first model to compare}
@@ -29,10 +37,25 @@ id_plot_compare(model1 = NULL, model2 = NULL, scale_flip = FALSE,
 
 \item{text_size_label}{Size of point labels}
 
-\item{rescale}{Whether to rescale the estimates from two models so they will match regardless of arbitrary scale shifts in the 
+\item{rescale}{Whether to rescale the estimates from two models so they will match regardless of arbitrary scale shifts in the
 ideal points}
+}
+\value{
+A \code{ggplot2} object comparing ideal points across two \code{idealstan} models. If
+\code{return_data=TRUE}, a list with elements \code{plot} and \code{data}.
 }
 \description{
 Function to compare two fitted idealstan models by plotting ideal points. Assumes that underlying data
 is the same for both models.
+}
+\examples{
+\donttest{
+# Fit the same data under two different model types and compare ideal points
+sim <- id_sim_gen()
+est1 <- id_estimate(sim, model_type=1, fixtype='vb_full',
+                    use_method="pathfinder", nchains=2, ncores=2)
+est2 <- id_estimate(sim, model_type=2, fixtype='vb_full',
+                    use_method="pathfinder", nchains=2, ncores=2)
+id_plot_compare(est1, est2)
+}
 }

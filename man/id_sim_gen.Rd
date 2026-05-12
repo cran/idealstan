@@ -4,23 +4,89 @@
 \alias{id_sim_gen}
 \title{Simulate IRT ideal point data}
 \usage{
-id_sim_gen(num_person = 20, num_bills = 50, model_type = "binary",
-  latent_space = FALSE, absence_discrim_sd = 2,
-  absence_diff_mean = 0.5, reg_discrim_sd = 2, diff_sd = 0.25,
-  time_points = 1, time_process = "random", time_sd = 0.1,
-  ideal_pts_sd = 1, prior_type = "gaussian", ordinal_outcomes = 3,
-  inflate = FALSE, sigma_sd = 1)
+id_sim_gen(
+  num_person = 20,
+  num_items = 50,
+  cov_effect = NULL,
+  person_cov = NULL,
+  person_cov_effect = NULL,
+  item_cov = NULL,
+  item_discrim_cov_effect = NULL,
+  item_miss_cov = NULL,
+  item_miss_discrim_cov_effect = NULL,
+  model_type = "binary",
+  latent_space = FALSE,
+  absence_discrim_sd = 3,
+  absence_diff_mean = 0,
+  discrim_reg_upb = 1,
+  discrim_reg_lb = -1,
+  discrim_miss_upb = 1,
+  discrim_miss_lb = -1,
+  discrim_reg_scale = 2,
+  discrim_reg_shape = 2,
+  discrim_miss_scale = 2,
+  discrim_miss_shape = 2,
+  diff_sd = 3,
+  time_points = 1,
+  time_process = "random",
+  time_sd = 0.1,
+  ideal_pts_sd = 3,
+  prior_type = "gaussian",
+  ordinal_outcomes = 3,
+  inflate = FALSE,
+  sigma_sd = 1,
+  spline_knots = NULL,
+  spline_degree = 2,
+  spline_intercept_sd = 0.5,
+  spline_basis_sd = 0.5,
+  phi = 1,
+  gp_rho = 0.5,
+  gp_alpha = 0.5,
+  gp_nugget = 0.1
+)
 }
 \arguments{
 \item{num_person}{The number of persons/persons}
 
-\item{num_bills}{The number of items/bills}
+\item{num_items}{The number of items (bills in the canonical ideal point model)}
+
+\item{cov_effect}{The effect of a hierarchical/external covariate on the person
+ideal points. The covariate will be a uniformly-distributed random variable on the
+[0,1] scale, so covariate effects in the [-2,2] approximate range would result in
+noticeable effects on the ideal point scale. This is a legacy parameter; prefer using
+\code{person_cov} and \code{person_cov_effect} for more control.}
+
+\item{person_cov}{Either \code{NULL} (no covariate), \code{"continuous"} to generate a uniform
+random covariate, \code{"binary"} to generate a binary (0/1) covariate, or a numeric
+matrix with \code{num_person} rows where each column is a covariate. If \code{cov_effect} is
+provided and \code{person_cov} is \code{NULL}, defaults to \code{"continuous"} for backward compatibility.}
+
+\item{person_cov_effect}{A numeric vector of regression coefficients for person
+covariates. Length must match the number of columns in \code{person_cov} matrix. If
+\code{person_cov} is \code{"continuous"} or \code{"binary"}, a single value should be provided.}
+
+\item{item_cov}{Either \code{NULL} (no covariate), \code{"continuous"} to generate a uniform
+random covariate, \code{"binary"} to generate a binary (0/1) covariate, or a numeric
+matrix with \code{num_items} rows where each column is a covariate.}
+
+\item{item_discrim_cov_effect}{A numeric vector of regression coefficients for the
+effect of item covariates on item discrimination parameters (gamma). Length must
+match the number of columns in \code{item_cov} matrix.}
+
+\item{item_miss_cov}{Either \code{NULL} (no covariate), \code{"continuous"} to generate a uniform
+random covariate, \code{"binary"} to generate a binary (0/1) covariate, or a numeric
+matrix with \code{num_items} rows where each column is a covariate. Used for missingness
+model parameters.}
+
+\item{item_miss_discrim_cov_effect}{A numeric vector of regression coefficients for
+the effect of item missing covariates on absence discrimination parameters (nu).
+Length must match the number of columns in \code{item_miss_cov} matrix.}
 
 \item{model_type}{One of \code{'binary'}, \code{'ordinal_rating'}, \code{'ordinal_grm'}, \code{'poisson'}
 \code{'normal'}, or \code{'lognormal'}}
 
-\item{latent_space}{Whether to use the latent space formulation of the ideal point model 
-\code{FALSE} by default. NOTE: currently, the package only has estimation for a 
+\item{latent_space}{Whether to use the latent space formulation of the ideal point model
+\code{FALSE} by default. NOTE: currently, the package only has estimation for a
 binary response with the latent space formulation.}
 
 \item{absence_discrim_sd}{The SD of the discrimination parameters for the inflated model}
@@ -28,34 +94,86 @@ binary response with the latent space formulation.}
 \item{absence_diff_mean}{The mean intercept for the inflated model; increasing it will lower the total number of
 missing data}
 
-\item{reg_discrim_sd}{The SD of the discrimination parameters for the non-inflated model}
+\item{discrim_reg_upb}{The upper bound of the generalized Beta distribution for the
+observed discrimination parameters (gamma)}
 
-\item{diff_sd}{The SD of the difficulty parameters (bill/item intercepts)}
+\item{discrim_reg_lb}{The lower bound of the generalized Beta distribution for the
+observed discrimination parameters (gamma)}
+
+\item{discrim_miss_upb}{The upper bound of the generalized Beta distribution for the
+missingness discrimination parameters (nu)}
+
+\item{discrim_miss_lb}{The lower bound of the generalized Beta distribution for the
+missingness discrimination parameters (nu)}
+
+\item{discrim_reg_scale}{The scale parameter for the generalized Beta
+distribution for the observed discrimination parameters (gamma)}
+
+\item{discrim_reg_shape}{The shape parameter for the generalized Beta
+distribution for the observed discrimination parameters (gamma)}
+
+\item{discrim_miss_scale}{The scale parameter for the generalized Beta
+distribution for the missingness discrimination parameters (nu)}
+
+\item{discrim_miss_shape}{The shape parameter for the generalized Beta
+distribution for the missingness discrimination parameters (nu)}
+
+\item{diff_sd}{The SD of the difficulty parameters (bill/item intercepts)
+for both missing and observed parameters (beta and omega)}
 
 \item{time_points}{The number of time points for time-varying legislator/person parameters}
 
-\item{time_process}{The process used to generate the ideal points: either \code{'random'} 
-for a random walk, \code{'AR'} for an AR1 process,
-or \code{'GP'} for a Gaussian process.}
+\item{time_process}{The process used to generate the ideal points: either \code{'random'}
+for a random walk, \code{'AR'} for an AR1 process, \code{'GP'} for a Gaussian process,
+or '\code{splines}' for a spline (see parameters \code{spline_knots} and \code{spline_degree}).}
 
-\item{time_sd}{The standard deviation of the change in ideal points over time (should be low relative to 
+\item{time_sd}{The standard deviation of the change in ideal points over time (should be low relative to
 \code{ideal_pts_sd})}
 
 \item{ideal_pts_sd}{The SD for the person/person ideal points}
 
-\item{prior_type}{The statistical distribution that generates the data. Currently only 
+\item{prior_type}{The statistical distribution that generates the data for
+ideal point parameters (alpha) and difficulty intercepts (beta and omega). Currently only
 'gaussian' is supported.}
 
 \item{ordinal_outcomes}{If \code{model} is \code{'ordinal'}, an integer giving the total number of categories}
 
 \item{inflate}{If \code{TRUE}, an missing-data-inflated dataset is produced.}
 
-\item{sigma_sd}{If a normal or log-normal distribution is being fitted, this parameter gives the standard 
+\item{sigma_sd}{If a normal or log-normal distribution is being fitted, this parameter gives the standard}
+
+\item{spline_knots}{Number of knots (essentially, number of points
+at which to calculate time-varying ideal points given T time points).
+Default is NULL, which means that the spline is equivalent to
+polynomial time trend of degree \code{spline_degree}.
+Note that the spline number (if not null) must be equal or less than
+the number of time points.}
+
+\item{spline_degree}{The degree of the spline polynomial. The default is 2 which is a
+quadratic polynomial. A value of 1 will result in independent knots (essentially
+pooled across time points T). A higher value will result in wigglier time series.}
+
+\item{spline_intercept_sd}{The SD of the Normal distribution (centered on 0) used to
+draw the intercept for the basis spline function}
+
+\item{spline_basis_sd}{The SD of the Normal distribution (centered on 0) for the
+coefficients used to create the simulated ideal points from the spline function}
+
+\item{phi}{The phi (dispersion) parameter for the ordered beta distribution
 deviation of the outcome (i.e. the square root of the variance).}
+
+\item{gp_rho}{The rho parameter to the squared exponential kernel function
+for the GP model}
+
+\item{gp_alpha}{The alpha parameter to the squared exponential kernel function
+for the GP model}
+
+\item{gp_nugget}{The nugget of the squared-exponential kernel (equals additional
+variance of the GP-distributed ideal points)}
 }
 \value{
-The results is a \code{idealdata} object that can be used in the 
-\code{\link{id_estimate}} function to run a model. It can also be used in the simulation
+The results is a \code{idealdata} object that can be used in the
+\link{id_estimate} function to run a model. It can also be used in the simulation
 plotting functions.
 }
 \description{
@@ -66,6 +184,14 @@ This function produces simulated data that matches (as closely as possible) the 
 used in the underlying Stan code. Currently the simulation can produce inflated and non-inflated
 models with binary, ordinal (GRM and rating-scale), Poisson, Normal and Log-Normal responses.
 }
+\examples{
+# Simulate binary (non-inflated) data for 20 persons and 50 items
+sim <- id_sim_gen(num_person=20, num_items=50, inflate=FALSE)
+head(sim@score_matrix)
+
+# Simulate an ordinal graded-response model with missing-data inflation
+sim_ord <- id_sim_gen(model='ordinal_grm', inflate=TRUE, num_person=10, num_items=20)
+}
 \seealso{
-\code{\link{id_plot_sims}} for plotting fitted models versus true values.
+\code{\link[=id_show_trues]{id_show_trues()}} for plotting fitted models versus true values.
 }

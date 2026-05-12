@@ -1,52 +1,156 @@
 #' Simulate IRT ideal point data
-#' 
+#'
 #' A function designed to simulate IRT ideal point data.
-#' 
+#'
 #' This function produces simulated data that matches (as closely as possible) the models
 #' used in the underlying Stan code. Currently the simulation can produce inflated and non-inflated
 #' models with binary, ordinal (GRM and rating-scale), Poisson, Normal and Log-Normal responses.
-#' 
+#'
 #' @param num_person The number of persons/persons
-#' @param num_bills The number of items/bills
-#' @param model_type One of \code{'binary'}, \code{'ordinal_rating'}, \code{'ordinal_grm'}, \code{'poisson'}
-#' \code{'normal'}, or \code{'lognormal'}
+#' @param num_items The number of items (bills in the canonical ideal point model)
+#' @param cov_effect The effect of a hierarchical/external covariate on the person
+#' ideal points. The covariate will be a uniformly-distributed random variable on the
+#' \[0,1\] scale, so covariate effects in the \[-2,2\] approximate range would result in
+#' noticeable effects on the ideal point scale. This is a legacy parameter; prefer using
+#' `person_cov` and `person_cov_effect` for more control.
+#' @param person_cov Either `NULL` (no covariate), `"continuous"` to generate a uniform
+#' random covariate, `"binary"` to generate a binary (0/1) covariate, or a numeric
+#' matrix with `num_person` rows where each column is a covariate. If `cov_effect` is
+#' provided and `person_cov` is `NULL`, defaults to `"continuous"` for backward compatibility.
+#' @param person_cov_effect A numeric vector of regression coefficients for person
+#' covariates. Length must match the number of columns in `person_cov` matrix. If
+#' `person_cov` is `"continuous"` or `"binary"`, a single value should be provided.
+#' @param item_cov Either `NULL` (no covariate), `"continuous"` to generate a uniform
+#' random covariate, `"binary"` to generate a binary (0/1) covariate, or a numeric
+#' matrix with `num_items` rows where each column is a covariate.
+#' @param item_discrim_cov_effect A numeric vector of regression coefficients for the
+#' effect of item covariates on item discrimination parameters (gamma). Length must
+#' match the number of columns in `item_cov` matrix.
+#' @param item_miss_cov Either `NULL` (no covariate), `"continuous"` to generate a uniform
+#' random covariate, `"binary"` to generate a binary (0/1) covariate, or a numeric
+#' matrix with `num_items` rows where each column is a covariate. Used for missingness
+#' model parameters.
+#' @param item_miss_discrim_cov_effect A numeric vector of regression coefficients for
+#' the effect of item missing covariates on absence discrimination parameters (nu).
+#' Length must match the number of columns in `item_miss_cov` matrix.
+#' @param model_type One of `'binary'`, `'ordinal_rating'`, `'ordinal_grm'`, `'poisson'`
+#' `'normal'`, or `'lognormal'`
 #' @param latent_space Whether to use the latent space formulation of the ideal point model 
-#' \code{FALSE} by default. NOTE: currently, the package only has estimation for a 
+#' `FALSE` by default. NOTE: currently, the package only has estimation for a 
 #' binary response with the latent space formulation.
 #' @param absence_discrim_sd The SD of the discrimination parameters for the inflated model
 #' @param absence_diff_mean The mean intercept for the inflated model; increasing it will lower the total number of
 #' missing data
-#' @param reg_discrim_sd The SD of the discrimination parameters for the non-inflated model
+#' @param discrim_reg_upb The upper bound of the generalized Beta distribution for the
+#' observed discrimination parameters (gamma)
+#' @param discrim_reg_lb The lower bound of the generalized Beta distribution for the
+#' observed discrimination parameters (gamma)
+#' @param discrim_miss_upb The upper bound of the generalized Beta distribution for the
+#' missingness discrimination parameters (nu)
+#' @param discrim_miss_lb The lower bound of the generalized Beta distribution for the
+#' missingness discrimination parameters (nu)
+#' @param discrim_reg_scale The scale parameter for the generalized Beta
+#' distribution for the observed discrimination parameters (gamma)
+#' @param discrim_reg_shape The shape parameter for the generalized Beta
+#' distribution for the observed discrimination parameters (gamma)
+#' @param discrim_miss_scale The scale parameter for the generalized Beta
+#' distribution for the missingness discrimination parameters (nu)
+#' @param discrim_miss_shape The shape parameter for the generalized Beta
+#' distribution for the missingness discrimination parameters (nu)
 #' @param diff_sd The SD of the difficulty parameters (bill/item intercepts)
+#' for both missing and observed parameters (beta and omega)
 #' @param time_points The number of time points for time-varying legislator/person parameters
-#' @param time_process The process used to generate the ideal points: either \code{'random'} 
-#' for a random walk, \code{'AR'} for an AR1 process,
-#' or \code{'GP'} for a Gaussian process.
+#' @param time_process The process used to generate the ideal points: either `'random'` 
+#' for a random walk, `'AR'` for an AR1 process, `'GP'` for a Gaussian process, 
+#' or '`splines`' for a spline (see parameters `spline_knots` and `spline_degree`).
 #' @param time_sd The standard deviation of the change in ideal points over time (should be low relative to 
-#' \code{ideal_pts_sd})
+#' `ideal_pts_sd`)
 #' @param ideal_pts_sd The SD for the person/person ideal points
-#' @param prior_type The statistical distribution that generates the data. Currently only 
+#' @param prior_type The statistical distribution that generates the data for
+#' ideal point parameters (alpha) and difficulty intercepts (beta and omega). Currently only 
 #' 'gaussian' is supported.
-#' @param ordinal_outcomes If \code{model} is \code{'ordinal'}, an integer giving the total number of categories
-#' @param inflate If \code{TRUE}, an missing-data-inflated dataset is produced.
-#' @param sigma_sd If a normal or log-normal distribution is being fitted, this parameter gives the standard 
+#' @param ordinal_outcomes If `model` is `'ordinal'`, an integer giving the total number of categories
+#' @param inflate If `TRUE`, an missing-data-inflated dataset is produced.
+#' @param sigma_sd If a normal or log-normal distribution is being fitted, this parameter gives the standard
+#' @param spline_knots Number of knots (essentially, number of points
+#' at which to calculate time-varying ideal points given T time points). 
+#' Default is NULL, which means that the spline is equivalent to 
+#' polynomial time trend of degree `spline_degree`.
+#' Note that the spline number (if not null) must be equal or less than 
+#' the number of time points.
+#' @param spline_degree The degree of the spline polynomial. The default is 2 which is a 
+#' quadratic polynomial. A value of 1 will result in independent knots (essentially 
+#' pooled across time points T). A higher value will result in wigglier time series.
+#' @param spline_intercept_sd The SD of the Normal distribution (centered on 0) used to
+#' draw the intercept for the basis spline function
+#' @param spline_basis_sd The SD of the Normal distribution (centered on 0) for the 
+#' coefficients used to create the simulated ideal points from the spline function
+#' @param phi The phi (dispersion) parameter for the ordered beta distribution
 #' deviation of the outcome (i.e. the square root of the variance).
-#' @return The results is a \code{idealdata} object that can be used in the 
-#' \code{\link{id_estimate}} function to run a model. It can also be used in the simulation
+#' @param gp_rho The rho parameter to the squared exponential kernel function
+#' for the GP model
+#' @param gp_alpha The alpha parameter to the squared exponential kernel function
+#' for the GP model
+#' @param gp_nugget The nugget of the squared-exponential kernel (equals additional
+#' variance of the GP-distributed ideal points)
+#' @return The results is a `idealdata` object that can be used in the 
+#' [id_estimate] function to run a model. It can also be used in the simulation
 #' plotting functions.
-#' @seealso \code{\link{id_plot_sims}} for plotting fitted models versus true values.
+#' @seealso [id_show_trues()] for plotting fitted models versus true values.
+#' @importFrom posterior as_draws_df as_draws_matrix as_draws_array summarise_draws summarize_draws rhat
+#' @importFrom stats rbinom
+#' @examples
+#' # Simulate binary (non-inflated) data for 20 persons and 50 items
+#' sim <- id_sim_gen(num_person=20, num_items=50, inflate=FALSE)
+#' head(sim@score_matrix)
+#'
+#' # Simulate an ordinal graded-response model with missing-data inflation
+#' sim_ord <- id_sim_gen(model='ordinal_grm', inflate=TRUE, num_person=10, num_items=20)
 #' @export
-id_sim_gen <- function(num_person=20,num_bills=50,
+
+id_sim_gen <- function(num_person=20,num_items=50,
+                       cov_effect=NULL,
+                       person_cov=NULL,
+                       person_cov_effect=NULL,
+                       item_cov=NULL,
+                       item_discrim_cov_effect=NULL,
+                       item_miss_cov=NULL,
+                       item_miss_discrim_cov_effect=NULL,
                        model_type='binary',
                        latent_space=FALSE,
-                       absence_discrim_sd=2,absence_diff_mean=0.5,
-                             reg_discrim_sd=2,diff_sd=.25,
+                       absence_discrim_sd=3,absence_diff_mean=0,
+                       discrim_reg_upb=1,
+                       discrim_reg_lb=-1,
+                       discrim_miss_upb=1,
+                       discrim_miss_lb=-1,
+                       discrim_reg_scale=2,
+                       discrim_reg_shape=2,
+                       discrim_miss_scale=2,
+                       discrim_miss_shape=2,
+                       diff_sd=3,
                             time_points=1,
                             time_process='random',
                           time_sd=.1,
-                             ideal_pts_sd=1,prior_type='gaussian',ordinal_outcomes=3,
+                             ideal_pts_sd=3,prior_type='gaussian',ordinal_outcomes=3,
                         inflate=FALSE,
-                       sigma_sd=1) {
+                       sigma_sd=1,
+                       spline_knots=NULL,
+                       spline_degree=2,
+                       spline_intercept_sd=0.5,
+                       spline_basis_sd=0.5,
+                       phi=1,
+                       gp_rho=0.5,
+                       gp_alpha=0.5,
+                       gp_nugget=.1) {
+  
+  # values that may not get set in particular functions
+  
+  gp_rho_gen <- NULL
+  gp_alpha_gen <- NULL
+  spline_basis <- NULL
+  spline_int <- NULL
+  
+  if(! (time_process %in% c("GP","AR","splines","random"))) stop("time_process should be one of 'GP', 'AR', 'splines', or 'random'.")
   
   # Allow for different type of distributions for ideal points
 
@@ -72,105 +176,311 @@ id_sim_gen <- function(num_person=20,num_bills=50,
     }
   }
   
+  # Helper function to generate or validate covariate matrix
+  .process_cov <- function(cov_spec, n_units, cov_effect, cov_name) {
+    if (is.null(cov_spec) && is.null(cov_effect)) {
+      # No covariate
+      return(list(matrix = matrix(0, nrow = n_units, ncol = 1),
+                  effect = 0,
+                  n_cov = 0))
+    }
+
+    if (is.character(cov_spec)) {
+      # Generate covariate based on type
+      if (cov_spec == "continuous") {
+        cov_matrix <- matrix(runif(n_units), ncol = 1)
+      } else if (cov_spec == "binary") {
+        cov_matrix <- matrix(rbinom(n_units, 1, 0.5), ncol = 1)
+      } else {
+        stop(paste0(cov_name, " must be 'continuous', 'binary', or a numeric matrix."))
+      }
+      n_cov <- 1
+    } else if (is.matrix(cov_spec) || is.data.frame(cov_spec)) {
+      cov_matrix <- as.matrix(cov_spec)
+      if (nrow(cov_matrix) != n_units) {
+        stop(paste0(cov_name, " matrix must have ", n_units, " rows (one per unit)."))
+      }
+      n_cov <- ncol(cov_matrix)
+    } else if (is.null(cov_spec) && !is.null(cov_effect)) {
+      # Legacy behavior: if effect is provided but no cov_spec, generate continuous
+      cov_matrix <- matrix(runif(n_units), ncol = 1)
+      n_cov <- 1
+    } else {
+      stop(paste0(cov_name, " must be NULL, 'continuous', 'binary', or a numeric matrix."))
+    }
+
+    # Validate effect vector
+    if (is.null(cov_effect)) {
+      stop(paste0("Must provide ", cov_name, "_effect when ", cov_name, " is specified."))
+    }
+    if (length(cov_effect) != n_cov) {
+      stop(paste0(cov_name, "_effect must have length ", n_cov, " to match covariate columns."))
+    }
+
+    return(list(matrix = cov_matrix, effect = cov_effect, n_cov = n_cov))
+  }
+
+  # Handle backward compatibility with cov_effect
+  if (!is.null(cov_effect) && is.null(person_cov) && is.null(person_cov_effect)) {
+    if (!is.numeric(cov_effect)) {
+      stop("The cov_effect parameter should be a number like -2 or 1.5. Think regression coefficient.")
+    }
+    person_cov <- "continuous"
+    person_cov_effect <- cov_effect
+  }
+
+  # Process person covariates
+  person_cov_data <- .process_cov(person_cov, num_person, person_cov_effect, "person_cov")
+  person_x <- person_cov_data$matrix
+  person_cov_effect_final <- person_cov_data$effect
+
+  # Compute covariate contribution (matrix multiplication for multiple covariates)
+  if (person_cov_data$n_cov > 0) {
+    cov_value <- as.vector(person_x %*% person_cov_effect_final)
+  } else {
+    cov_value <- rep(0, num_person)
+  }
+
+  # Replicate for time points (each person's covariate effect is constant over time)
+  cov_value <- rep(cov_value, times = time_points)
+
+  # Process item covariates (for regular discrimination)
+  item_cov_data <- .process_cov(item_cov, num_items, item_discrim_cov_effect, "item_cov")
+  item_x <- item_cov_data$matrix
+  item_discrim_cov_effect_final <- item_cov_data$effect
+
+  # Compute item discrimination covariate contribution
+  if (item_cov_data$n_cov > 0) {
+    item_discrim_cov_value <- as.vector(item_x %*% item_discrim_cov_effect_final)
+  } else {
+    item_discrim_cov_value <- rep(0, num_items)
+  }
+
+  # Process item missing covariates (for absence discrimination)
+  item_miss_cov_data <- .process_cov(item_miss_cov, num_items, item_miss_discrim_cov_effect, "item_miss_cov")
+  item_miss_x <- item_miss_cov_data$matrix
+  item_miss_discrim_cov_effect_final <- item_miss_cov_data$effect
+
+  # Compute item missing discrimination covariate contribution
+  if (item_miss_cov_data$n_cov > 0) {
+    item_miss_discrim_cov_value <- as.vector(item_miss_x %*% item_miss_discrim_cov_effect_final)
+  } else {
+    item_miss_discrim_cov_value <- rep(0, num_items)
+  }
+
+  # For backward compatibility, keep cov_effect as a scalar
+  cov_effect <- if (person_cov_data$n_cov > 0) person_cov_effect_final[1] else 0
+  
   # First simulate ideal points for person/legislators/bills
   # Bill difficulty parameters are fixed because they are not entirely interesting (they represent intercepts)
-  
-  absence_diff <- prior_func(params=list(N=num_bills,mean=absence_diff_mean,sd=diff_sd)) 
+
+  absence_diff <- prior_func(params=list(N=num_items,mean=absence_diff_mean,sd=diff_sd))
   #Discrimination parameters more important because they reflect how much information a bill contributes
   # need to make some of them negative to reflect the switching nature of policies
-  #absence_discrim <- prior_func(params=list(N=num_bills,mean=1,sd=absence_discrim_sd)) * if_else(runif(num_bills-1)>0.5,1,-1)
-  absence_discrim <- prior_func(params=list(N=num_bills,mean=0,sd=absence_discrim_sd))
+  #absence_discrim <- prior_func(params=list(N=num_items,mean=1,sd=absence_discrim_sd)) * if_else(runif(num_items-1)>0.5,1,-1)
+  absence_discrim <- .genbeta_sample(n=num_items,alpha=discrim_miss_shape,
+                                     beta=discrim_miss_scale,lb=discrim_miss_lb,
+                                     lb_offset=discrim_miss_upb - discrim_miss_lb) +
+    item_miss_discrim_cov_value
+
   # person ideal points common to both types of models (absence and regular)
+  
+  ideal_pts_mean <- NULL
 
   if(time_points==1) {
-    ideal_pts <- as.matrix(prior_func(params=list(N=num_person,mean=0,sd=ideal_pts_sd)))
+    ideal_pts <- as.matrix(prior_func(params=list(N=num_person,mean=0,sd=ideal_pts_sd)) + cov_value)
     drift <- 0
     ar_adj <- 0
+    time_sd_all <- NULL
   } else if(time_points>1) {
     # if more than 1 time point, generate via an AR, random-walk or GP process
     if(time_process=='GP') {
-      ar_adj <- runif(n=num_person,2.5,5.5) # rho parameter in GPs
-      drift <- 0.5 # marginal standard deviation
+      
+      drift <- 0
+      ar_adj <- 0
+      
+      ideal_pts_mean <- prior_func(params=list(N=num_person,mean=0,sd=ideal_pts_sd))
+      gp_rho_gen <- rexp(n=num_person,gp_rho) # rho parameter in GPs
+      gp_alpha_gen <- rexp(n=num_person,gp_alpha)
+      
       simu_data <- list(N=num_person,
                         T=time_points,
                         x=1:time_points,
-                        rho=ar_adj,
-                        alpha=drift,
-                        sigma=time_sd)
+                        ideal_pts=ideal_pts_mean,
+                        rho=gp_rho_gen,
+                        alpha=gp_alpha_gen,
+                        sigma=gp_nugget)
       # loop over persons and construct GP with stan code
-      simu_fit <- sampling(stanmodels[['sim_gp']], data=simu_data, iter=1,
-                       chains=1, seed=494838, algorithm="Fixed_param")
-      ideal_pts <- rstan::extract(simu_fit)$Y[1,,]
+      
+      stan_code <- system.file("stan_files","sim_gp.stan",
+                            package="idealstan")
+      
+      simu_mod <- stan_code %>%
+        cmdstanr::cmdstan_model(include_paths=dirname(stan_code))
+      
+      simu_fit <- simu_mod$sample(data=simu_data, iter_sampling=1,
+                                  chains=1, fixed_param=TRUE)
+      
+      ideal_pts <- simu_fit$draws("Y") %>% as_draws_df %>% 
+        as.data.frame %>%
+        select(-`.iteration`,-`.draw`,-`.chain`) %>% 
+        gather(key="variable",value="value") %>% 
+        mutate(person=as.numeric(stringr::str_extract(variable,"(?<=\\[)[0-9]+")),
+               time=as.numeric(stringr::str_extract(variable,"(?<=,)[0-9]+"))) %>% 
+        select(-variable) %>% 
+        spread("time","value") %>% 
+        select(-person) %>% 
+        as.matrix
+      
+      # add in external covariates
+      
+      ideal_pts <- ideal_pts + matrix(cov_value,nrow=num_person,ncol=time_points,byrow = TRUE)
+      
+      time_sd_all <- time_sd
+      
+      spline_basis <- NULL
+      spline_int <- NULL
+      
+    } else if(time_process=='splines') {
+      
+      # generate knots
+      
+      if(!is.null(spline_knots)) {
+        
+        spline_knots <- quantile(1:time_points, 
+                                 probs=seq(0,1,length.out=spline_knots+2))
+        
+        # remove first and last knot, these should be internal
+        
+        spline_knots <- spline_knots[2:(length(spline_knots)-1)]
+        
+      }
+      
+      # generate basis
+      
+      B <- t(splines::bs(1:time_points, knots=spline_knots,
+                degree=spline_degree,
+                intercept=TRUE))
+      
+      num_basis <- nrow(B)
+      
+      spline_int <- rnorm(num_person, 0, spline_intercept_sd)
+      spline_basis <- sapply(1:num_person, function(i) {
+        rnorm(num_basis , 0, spline_basis_sd)
+              })
+      
+      ideal_pts <- sapply(1:num_person, function(i) {
+        
+        #as.vector(spline_int[i] * (1:time_points) + spline_basis[,i] %*% B)
+        as.vector(spline_basis[,i] %*% B)
+        
+        })
+      
+      ideal_pts <- t(ideal_pts)
+      
+      time_sd_all <- NULL
+      drift <- NULL
+      ar_adj <- NULL
       
     } else {
       ideal_t1 <- prior_func(params=list(N=num_person,mean=0,sd=ideal_pts_sd))
       if(time_process=='AR') {
         # random AR parameters
-        ar_adj <- runif(n = num_person,min = -0.5,max=0.5)
+
+        ar_adj <- .genbeta_sample(n=num_person,alpha=2,
+                        beta=2,lb=-1,
+                        lb_offset=2)
+        
       } else if(time_process=='random') {
         ar_adj <- rep(1,num_person)
       }
       # drift parameters
       drift <- prior_func(params=list(N=num_person,mean=0,sd=ideal_pts_sd))
       
+      time_sd_all <- rexp(num_person, 1/time_sd)
+      
       ideal_pts <- lapply(1:num_person, function(i) {
         this_person <- .gen_ts_data(t=time_points,
                                     adj_in=ar_adj[i],
                                     alpha_int=drift[i],
-                                    sigma=time_sd,
+                                    sigma=time_sd_all[i],
                                     init_sides=ideal_t1[i])
         return(this_person)
-      }) %>% bind_cols %>% as.matrix
+      }) %>% bind_cols(.name_repair = "minimal")
+      # Set matrix-friendly column names before conversion
+      names(ideal_pts) <- paste0("V", seq_len(ncol(ideal_pts)))
+      ideal_pts <- as.matrix(ideal_pts)
+      
       ideal_pts <- t(ideal_pts)
+      
+      spline_basis <- NULL
+      spline_int <- NULL
+      
     }
+    
+    ideal_pts <- ideal_pts + matrix(cov_value,nrow=num_person,ncol=time_points,byrow = TRUE)
+    
   }
   
   # First generate prob of absences
 
-  person_points <- rep(1:num_person,times=num_bills)
-  bill_points <- rep(1:num_bills,each=num_person)
+  person_points <- rep(1:num_person,times=num_items)
+  item_points <- rep(1:num_items,each=num_person)
 
   # generate time points
   
-  if((num_bills %% time_points)!=0) stop('Total number of time points must be a multiple of the number of bills/items.')
-  time_points <- rep(1:time_points,each=num_bills/time_points)
-  time_points <- time_points[bill_points]
+  if((num_items %% time_points)!=0) stop('Total number of time points must be a multiple of the number of bills/items.')
+  time_points <- rep(1:time_points,each=num_items/time_points)
+  time_points <- time_points[item_points]
   
   if(latent_space) {
+    
+    # give the person intercepts the same SD as the person ideal points
+    # although not time-varying, time constant
+    
+    ls_int_abs <- prior_func(params=list(N=num_person,mean=0,sd=ideal_pts_sd))
+    
     # use latent-space formulation for likelihood
 
     pr_absence <- sapply(1:length(person_points),function(n) {
-      -sqrt((ideal_pts[person_points[n],time_points[n]] - absence_diff[bill_points[n]])^2)
+      ls_int_abs[person_points[n]] + absence_diff[item_points[n]] -
+      sqrt((ideal_pts[person_points[n],time_points[n]] - absence_discrim[item_points[n]])^2)
     }) %>% plogis()
   } else {
+    
+    ls_int_abs <- NULL
+    
     # use IRT formulation for likelihood
     pr_absence <- sapply(1:length(person_points),function(n) {
-      ideal_pts[person_points[n],time_points[n]]*absence_discrim[bill_points[n]] - absence_diff[bill_points[n]]
+      ideal_pts[person_points[n],time_points[n]]*absence_discrim[item_points[n]] - absence_diff[item_points[n]]
     }) %>% plogis()
     
   }
 
-  reg_diff <- prior_func(params=list(N=num_bills,mean=0,sd=diff_sd))
-  reg_discrim <- prior_func(params=list(N=num_bills,mean=0,sd=reg_discrim_sd))
+  reg_diff <- prior_func(params=list(N=num_items,mean=0,sd=diff_sd))
+  reg_discrim <- .genbeta_sample(n=num_items,alpha=discrim_reg_shape,
+                                 beta=discrim_reg_scale,lb=discrim_reg_lb,
+                                 lb_offset=discrim_reg_upb - discrim_reg_lb) +
+    item_discrim_cov_value
   
   # this is the same for all DGPs
   if(latent_space) {
-    if(inflate) {
-      pr_vote <- sapply(1:length(person_points),function(n) {
-        -sqrt((ideal_pts[person_points[n],time_points[n]] - reg_diff[bill_points[n]])^2)
-      }) %>% plogis()
-    } else {
-      # latent space non-inflated formulation is different
-      reg_discrim <- prior_func(params=list(N=num_person,mean=0,sd=ideal_pts_sd))
-      pr_vote <- sapply(1:length(person_points),function(n) {
-        reg_discrim[person_points[n]] + absence_discrim[bill_points[n]] -
-          sqrt((ideal_pts[person_points[n],time_points[n]] - reg_diff[bill_points[n]])^2)
-      }) %>% plogis()
-    }
     
+    # give the person intercepts the same SD as the person ideal points
+    # although not time-varying, time constant
+    
+    ls_int <- prior_func(params=list(N=num_person,mean=0,sd=ideal_pts_sd))
+    
+      pr_vote <- sapply(1:length(person_points),function(n) {
+        ls_int[person_points[n]] + reg_diff[item_points[n]] -
+          sqrt((ideal_pts[person_points[n],time_points[n]] - reg_discrim[item_points[n]])^2)
+      }) %>% plogis()
   } else {
+    
+    ls_int <- NULL
+    
     pr_vote <- sapply(1:length(person_points),function(n) {
-      ideal_pts[person_points[n],time_points[n]]*reg_discrim[bill_points[n]] - reg_diff[bill_points[n]]
+      ideal_pts[person_points[n],time_points[n]]*reg_discrim[item_points[n]] - reg_diff[item_points[n]]
     }) %>% plogis()
   }
 
@@ -182,7 +492,12 @@ id_sim_gen <- function(num_person=20,num_bills=50,
                      `ordinal_grm`=.ordinal_grm,
                      `poisson`=.poisson,
                      normal=.normal,
-                     lognormal=.lognormal)
+                     lognormal=.lognormal,
+                     ordbeta=.ordbeta)
+  
+  if(is.null(run_func)) {
+    stop("Please select one of the available options for model_type from the help file.")
+  }
   
   outobj <- run_func(pr_absence=pr_absence,
            pr_vote=pr_vote,
@@ -191,25 +506,56 @@ id_sim_gen <- function(num_person=20,num_bills=50,
            inflate=inflate,
            latent_space=latent_space,
            time_points=time_points,
-           item_points=bill_points,
+           item_points=item_points,
            person_points=person_points,
-           sigma_sd=sigma_sd)
-  
-  outobj@simul_data <- list(num_person=num_person,
-                                       num_bills=num_bills,
-                                       absence_discrim_sd=absence_discrim_sd,
-                                       absence_diff_mean=absence_diff_mean,
-                                       reg_discrim_sd=reg_discrim_sd,
-                                       ideal_pts_sd=ideal_pts_sd,
-                                       prior_func=prior_func,
-                                       ordinal_outcomes=ordinal_outcomes,
-                                       true_person=ideal_pts,
-                                       true_reg_discrim=reg_discrim,
-                                       true_abs_discrim=absence_discrim,
-                            drift=drift,
-                            ar_adj=ar_adj)
+           sigma_sd=sigma_sd,
+           cov_effect=cov_effect,
+           person_x=person_x,
+           person_cov_effect=person_cov_effect_final,
+           item_x=item_x,
+           item_discrim_cov_effect=item_discrim_cov_effect_final,
+           item_miss_x=item_miss_x,
+           item_miss_discrim_cov_effect=item_miss_discrim_cov_effect_final,
+           phi=phi)
 
-  outobj@person_data <- data_frame(person.names=paste0('person_',1:nrow(outobj@score_matrix)),
+  outobj@simul_data <- list(num_person=num_person,
+                            num_items=num_items,
+                            absence_diff_mean=absence_diff_mean,
+                            absence_diff=absence_diff,
+                            discrim_reg_shape=discrim_reg_shape,
+                            discrim_reg_scale=discrim_reg_scale,
+                            discrim_reg_lb=discrim_reg_lb,
+                            discrim_miss_shape=discrim_miss_shape,
+                            discrim_miss_scale=discrim_miss_scale,
+                            discrim_miss_lb=discrim_miss_lb,
+                            reg_diff=reg_diff,
+                            ideal_pts_sd=ideal_pts_sd,
+                            prior_func=prior_func,
+                            ordinal_outcomes=ordinal_outcomes,
+                            true_person=ideal_pts,
+                            true_reg_discrim=reg_discrim,
+                            true_abs_discrim=absence_discrim,
+                            true_person_mean=ideal_pts_mean,
+                            time_sd=time_sd,
+                            time_sd_all=time_sd_all,
+                            drift=drift,
+                            ar_adj=ar_adj,
+                            gp_rho=gp_rho_gen,
+                            gp_alpha=gp_alpha_gen,
+                            cov_effect=cov_effect,
+                            person_x=person_x,
+                            person_cov_effect=person_cov_effect_final,
+                            item_x=item_x,
+                            item_discrim_cov_effect=item_discrim_cov_effect_final,
+                            item_miss_x=item_miss_x,
+                            item_miss_discrim_cov_effect=item_miss_discrim_cov_effect_final,
+                            ls_int=ls_int,
+                            ls_int_abs=ls_int_abs,
+                            phi=1,
+                            spline_basis=spline_basis,
+                            spline_int=spline_int)
+
+  outobj@person_data <- tibble(person.names=paste0('person_',1:nrow(outobj@score_matrix)),
                                                group='L')
   
   outobj@simulation <- TRUE
@@ -233,16 +579,16 @@ id_sim_gen <- function(num_person=20,num_bills=50,
   
   if(simul_type=='absence') {
     simul_func <- id_sim_gen
-    if(is.ordinal==TRUE) {
+    if(is.ordinal) {
       model_type <- 4
     } else {
       model_type <- 2
     }
-    absence <- T
+    absence <- TRUE
   }
   full_range <- seq(param_range[1],param_range[2],by=by)
   all_sims <- lapply(full_range, function(N){
-    sim_data <- simul_func(num_person=N,num_bills=N,ordinal=is.ordinal,absence=absence)
+    sim_data <- simul_func(num_person=N,num_items=N,ordinal=is.ordinal,absence=absence)
 
     true_param <- switch(restrict_params,
                              person=sim_data@simul_data$true_person,
@@ -258,7 +604,7 @@ id_sim_gen <- function(num_person=20,num_bills=50,
                 low_par=low_par,
                 high_par_est=high_par_est,
                 low_par_est=low_par_est))
-    browser()
+
   })
   
   
@@ -268,7 +614,7 @@ id_sim_gen <- function(num_person=20,num_bills=50,
   est_models <- lapply(all_sims,function(m,...) {
 
     id_estimate(m$sim_data,
-                   use_vb=FALSE,
+                   use_method="mcmc",
                    restrict_ind_high=c(m$high_par,m$low_par),
                    pin_vals = c(m$high_par_est,m$low_par_est),
                    fixtype=fixtype,
@@ -281,7 +627,7 @@ id_sim_gen <- function(num_person=20,num_bills=50,
   est_models_vb <-  lapply(all_sims,function(m,...) {
     
     id_estimate(m$sim_data,
-                   use_vb=TRUE,
+                   use_method="pathfinder",
                    restrict_ind_high=c(m$high_par,m$low_par),
                    pin_vals = c(m$high_par_est,m$low_par_est),
                    fixtype=fixtype,
@@ -321,39 +667,63 @@ id_sim_gen <- function(num_person=20,num_bills=50,
 
 #' RMSE function for calculating individual RMSE values compared to true simulation scores
 #' Returns a data frame with RMSE plus quantiles.
-#' @param obj A fitted \code{idealstan} object with true data from \code{\link{id_sim_gen}}
+#' @param obj A fitted `idealstan` object with true data from [id_sim_gen()]
 #' @param rep Over how many replicates to calculate RMSE? Currently can only be 1
+#' @examples
+#' \donttest{
+#' sim <- id_sim_gen()
+#' est <- id_estimate(sim, model_type=1, fixtype='vb_full',
+#'                    use_method="pathfinder", nchains=2, ncores=2)
+#' id_sim_rmse(est)
+#' }
+#' @return A named list of \code{\link[tibble]{tibble}} objects, one per parameter type
+#'   (\code{Ideal Points}, \code{Absence Discriminations}, \code{Item Discrimations}), each with
+#'   columns \code{avg}, \code{high}, \code{low}, \code{Params}, \code{est_type}, and \code{iter}
+#'   summarising RMSE relative to true parameter values.
 #' @export
 id_sim_rmse <- function(obj,rep=1) {
-  all_params <- rstan::extract(obj@stan_samples)
+  
   
   all_true <- obj@score_data@simul_data
   
   if(length(unique(as.numeric(obj@score_data@score_matrix$time_id)))>1) {
     true_person <- all_true$true_person[as.numeric(levels(obj@score_data@score_matrix$person_id)),]
-    person_est <- all_params$L_tp1
+    person_est <- .get_varying(obj)
   } else {
     true_person <- all_true$true_person[as.numeric(levels(obj@score_data@score_matrix$person_id))]
-    person_est <- all_params$L_full
+    person_est <- obj@stan_samples$draws("L_full") %>% as_draws_matrix()
   }
   true_sigma_reg <- all_true$true_reg_discrim
   true_sigma_abs <- all_true$true_abs_discrim
   
   over_params <- function(est_param,true_param) {
-  
-  if(class(est_param)=='array') {
-    param_length <- dim(est_param)[3]
-    all_rmse <- sapply(1:param_length, function(i) {
-      this_param <- sqrt((est_param[,,i] - true_param[i])^2)
-    })
-  } else if(class(est_param)=='matrix') {
+    
     param_length <- ncol(est_param)
+  
+  if('matrix' %in% class(true_param)) {
+    
+    num_person <- length(unique(as.numeric(obj@score_data@score_matrix$person_id)))
+    time <- length(unique(as.numeric(obj@score_data@score_matrix$time_id)))
+    
+    # make grid to loop over for person and time
+    
+    person_time <- expand.grid(1:time,1:num_person)
+    
+    all_rmse <- sapply(1:nrow(person_time), function(i) {
+      
+      this_param <- sqrt((est_param[,i] - true_param[person_time$Var2[i],person_time$Var1[i]])^2)
+      
+      return(this_param)
+    })
+    
+  } else if('numeric' %in% class(true_param)) {
+    
     all_rmse <- sapply(1:param_length, function(i) {
       this_param <- sqrt((est_param[,i] - true_param[i])^2)
     })
   }
     
-    out_data1 <- data_frame(avg=apply(all_rmse,2,mean),
+    out_data1 <- tibble(avg=apply(all_rmse,2,mean),
                             high=apply(all_rmse,2,quantile,probs=0.9),
                             low=apply(all_rmse,2,quantile,probs=0.1),
                             total_avg=mean(all_rmse),
@@ -367,53 +737,69 @@ id_sim_rmse <- function(obj,rep=1) {
   
   
   out_data <- list(`Ideal Points`=over_params(person_est,true_person),
-                   `Absence Discrimination`=over_params(all_params$sigma_abs_free,true_sigma_abs),
-                   `Item Discrimination`=over_params(all_params$sigma_reg_free,true_sigma_reg))
+                   `Absence Discriminations`=over_params(as_draws_matrix(obj@stan_samples$draws("sigma_abs_free")),
+                                                         true_sigma_abs),
+                   `Item Discrimations`=over_params(as_draws_matrix(obj@stan_samples$draws("sigma_reg_free")),
+                                                    true_sigma_reg))
   
   return(out_data)
 
 }
 
-#' Function that computes how often the true value of the parameter is included within the 
+#' Function that computes how often the true value of the parameter is included within the
 #' 95/5 high posterior density interval
-#' @param obj A fitted \code{idealstan} object with true data generated by \code{\link{id_sim_gen}}
+#' @param obj A fitted `idealstan` object with true data generated by [id_sim_gen()]
 #' @param rep How many times the models were fitted on new data, currently can only be 1
 #' @param quantiles What the quantile coverage of the high posterior density interval should be
+#' @examples
+#' \donttest{
+#' sim <- id_sim_gen()
+#' est <- id_estimate(sim, model_type=1, fixtype='vb_full',
+#'                    use_method="pathfinder", nchains=2, ncores=2)
+#' cov <- id_sim_coverage(est)
+#' # average coverage across all person ideal points
+#' mean(cov[['Person Ideal Points']]$avg)
+#' }
+#' @return A named list of \code{\link[tibble]{tibble}} objects, one per parameter type
+#'   (\code{Person Ideal Points}, \code{Absence Discriminations}, \code{Item Discrimations}), each with
+#'   columns \code{avg}, \code{high}, \code{low}, \code{Params}, \code{est_type}, and \code{iter}
+#'   summarising posterior coverage of the true parameter values.
 #' @export
 id_sim_coverage <- function(obj,rep=1,quantiles=c(.95,.05)) {
-
-  all_params <- rstan::extract(obj@stan_samples)
   
   all_true <- obj@score_data@simul_data
   
   if(length(unique(as.numeric(obj@score_data@score_matrix$time_id)))>1) {
     true_person <- all_true$true_person[as.numeric(levels(obj@score_data@score_matrix$person_id)),]
-    person_est <- all_params$L_tp1
+    person_est <- .get_varying(obj)
   } else {
     true_person <- all_true$true_person[as.numeric(levels(obj@score_data@score_matrix$person_id))]
-    person_est <- all_params$L_full
+    person_est <- obj@stan_samples$draws("L_full") %>% as_draws_matrix()
   }
   
   true_sigma_reg <- all_true$true_reg_discrim
   true_sigma_abs <- all_true$true_abs_discrim
   
   over_params <- function(est_param,true_param) {
-
-    if(class(est_param)=='array') {
-      param_length <- dim(est_param)[3]
-      time <- dim(est_param)[2]
-      high <- apply(est_param,c(2,3), quantile,quantiles[1])
-      low <- apply(est_param,c(2,3), quantile,quantiles[2])
-      all_covs <- sapply(1:param_length, function(i) {
-        over_time <- sapply(1:time,function(t) {
-          this_sd <- apply(est_param,c(2,3), sd)
-          #this_param <- (true_param[i] < (true_param[i]+1.96*this_sd)) && (true_param[i] > (true_param[i]-1.96*this_sd))
-          this_param <- (true_param[i,t] < high[t,i]) && (true_param[i,t] >low[t,i])
-        })
+    
+    if("matrix" %in% class(true_param)) {
+      
+      num_person <- length(unique(as.numeric(obj@score_data@score_matrix$person_id)))
+      time <- length(unique(as.numeric(obj@score_data@score_matrix$time_id)))
+      high <- apply(est_param,2, quantile,quantiles[1])
+      low <- apply(est_param,2, quantile,quantiles[2])
+      
+      # make grid to loop over for person and time
+      
+      person_time <- expand.grid(1:time,1:num_person)
+      
+      all_covs <- sapply(1:nrow(person_time), function(i) {
         
-        return(over_time)
+        this_param <- (true_param[person_time$Var2[i],person_time$Var1[i]] < high[i]) && (true_param[person_time$Var2[i],person_time$Var1[i]] >low[i])
+        
+        return(this_param)
       })
-    } else if(class(est_param)=='matrix') {
+    } else if("numeric" %in% class(true_param)) {
       param_length <- ncol(est_param)
       all_covs <- sapply(1:param_length, function(i) {
          high <- quantile(est_param[,i],.95)
@@ -424,11 +810,12 @@ id_sim_coverage <- function(obj,rep=1,quantiles=c(.95,.05)) {
         
       })
     }
-    all_covs <- data_frame(avg=as.numeric(all_covs),est_type='Coverage',iter=rep)
+    all_covs <- tibble(avg=as.numeric(all_covs),est_type='Coverage',iter=rep)
     return(all_covs)
   }
 
-  total_iters <- obj@stan_samples@stan_args[[1]]$iter-obj@stan_samples@stan_args[[1]]$warmup
+  total_iters <- nrow(as_draws_matrix(obj@stan_samples$draws("L_full")))
+  
   if(rep<total_iters) {
     to_iters <- sample(1:total_iters,rep)
   } else {
@@ -440,8 +827,10 @@ id_sim_coverage <- function(obj,rep=1,quantiles=c(.95,.05)) {
   #                         true_param=true_person)
 
     out_data <- list(`Person Ideal Points`=over_params(person_est,true_person),
-                     `Absence Discriminations`=over_params(all_params$sigma_abs_free,true_sigma_abs),
-                     `Item Discrimations`=over_params(all_params$sigma_reg_free,true_sigma_reg))
+                     `Absence Discriminations`=over_params(as_draws_matrix(obj@stan_samples$draws("sigma_abs_free")),
+                                                           true_sigma_abs),
+                     `Item Discrimations`=over_params(as_draws_matrix(obj@stan_samples$draws("sigma_reg_free")),
+                                                      true_sigma_reg))
 
 
   
@@ -450,42 +839,66 @@ id_sim_coverage <- function(obj,rep=1,quantiles=c(.95,.05)) {
 
 #' Residual function for checking estimated samples compared to true simulation scores
 #' Returns a data frame with residuals plus quantiles.
-#' @param obj A fitted \code{idealstan} object with true data from \code{\link{id_sim_gen}}
+#' @param obj A fitted `idealstan` object with true data from [id_sim_gen()]
 #' @param rep Over how many replicates to calculate residuals? Currently can only be 1
+#' @examples
+#' \donttest{
+#' sim <- id_sim_gen()
+#' est <- id_estimate(sim, model_type=1, fixtype='vb_full',
+#'                    use_method="pathfinder", nchains=2, ncores=2)
+#' id_sim_resid(est)
+#' }
+#' @return A named list of \code{\link[tibble]{tibble}} objects, one per parameter type
+#'   (\code{Ideal Points}, \code{Absence Discrimination}, \code{Item Discrimination}), each with
+#'   columns \code{avg}, \code{high}, \code{low}, \code{Params}, \code{est_type}, and \code{iter}
+#'   summarising posterior residuals relative to true parameter values.
 #' @export
 id_sim_resid <- function(obj,rep=1) {
-  
-  all_params <- rstan::extract(obj@stan_samples)
   
   all_true <- obj@score_data@simul_data
   
   if(length(unique(as.numeric(obj@score_data@score_matrix$time_id)))>1) {
     true_person <- all_true$true_person[as.numeric(levels(obj@score_data@score_matrix$person_id)),]
-    person_est <- all_params$L_tp1
+    person_est <- .get_varying(obj)
   } else {
     true_person <- all_true$true_person[as.numeric(levels(obj@score_data@score_matrix$person_id))]
-    person_est <- all_params$L_full
+    person_est <- obj@stan_samples$draws("L_full") %>% as_draws_matrix()
   }
   
   true_sigma_reg <- all_true$true_reg_discrim
   true_sigma_abs <- all_true$true_abs_discrim
   
+  
+  
   over_params <- function(est_param,true_param) {
-
-  if(class(est_param)=='array') {
-    param_length <- dim(est_param)[3]
-    all_resid <- sapply(1:param_length, function(i) {
-      this_param <- (est_param[,,i] - true_param[i])
-    })
-  } else if(class(est_param)=='matrix') {
+    
     param_length <- ncol(est_param)
+
+  if('matrix' %in% class(true_param)) {
+    
+    num_person <- length(unique(as.numeric(obj@score_data@score_matrix$person_id)))
+    time <- length(unique(as.numeric(obj@score_data@score_matrix$time_id)))
+    
+    # make grid to loop over for person and time
+    
+    person_time <- expand.grid(1:time,1:num_person)
+    
+    all_resid <- sapply(1:nrow(person_time), function(i) {
+      
+      this_param <- est_param[,i] - true_param[person_time$Var2[i],person_time$Var1[i]]
+      
+      return(this_param)
+    })
+    
+  } else if('numeric' %in% class(true_param)) {
+    
     all_resid <- sapply(1:param_length, function(i) {
       this_param <- (est_param[,i] - true_param[i])
     })
   }
   
   
-  out_data1 <- data_frame(avg=apply(all_resid,2,mean),
+  out_data1 <- tibble(avg=apply(all_resid,2,mean),
                           high=apply(all_resid,2,quantile,probs=0.9),
                           low=apply(all_resid,2,quantile,probs=0.1),
                           total_avg=mean(all_resid),
@@ -500,8 +913,8 @@ id_sim_resid <- function(obj,rep=1) {
   }
   
   out_data <- list(`Ideal Points`=over_params(person_est,true_person),
-                   `Absence Discrimination`=over_params(all_params$sigma_abs_free,true_sigma_abs),
-                   `Item Discrimination`=over_params(all_params$sigma_reg_free,true_sigma_reg))
+                   `Absence Discrimination`=over_params(as_draws_matrix(obj@stan_samples$draws("sigma_abs_free")),true_sigma_abs),
+                   `Item Discrimination`=over_params(as_draws_matrix(obj@stan_samples$draws("sigma_reg_free")),true_sigma_reg))
   
   return(out_data)
 

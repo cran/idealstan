@@ -4,7 +4,9 @@
 \name{delaware}
 \alias{delaware}
 \title{Rollcall vote data for Delaware State Legislature}
-\format{A long data frame with one row for every vote cast by a legislator.}
+\format{
+A long data frame with one row for every vote cast by a legislator.
+}
 \source{
 \url{https://www.cambridge.org/core/journals/american-political-science-review/article/ideological-mapping-of-american-legislatures/8E1192C22AA0B9F9B56167998A41CAB0}
 }
@@ -13,11 +15,11 @@ delaware
 }
 \description{
 This data frame contains the rollcall voting data for the Delaware state legislature from 1995 to present.
-The data is in long format so that each row is one vote cast by a legislator. It includes a column, 
-`group_id`, that lists a party for each legislator (D=Democrat, R=Republican,X=Independent).
+The data is in long format so that each row is one vote cast by a legislator. It includes a column,
+\code{group_id}, that lists a party for each legislator (D=Democrat, R=Republican,X=Independent).
 }
 \details{
-The original data come from Boris Shor and Nolan McCarty (2002), "The Ideological Mapping of 
+The original data come from Boris Shor and Nolan McCarty (2002), "The Ideological Mapping of
 American Legislatures", American Political Science Review.
 }
 \keyword{datasets}

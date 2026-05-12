@@ -4,17 +4,19 @@
 \name{senate114}
 \alias{senate114}
 \title{Rollcall vote data for 114th Senate}
-\format{A long data frame with one row for every vote cast by a Senator.}
+\format{
+A long data frame with one row for every vote cast by a Senator.
+}
 \source{
-\url{http://www.voteview.com/}
+\url{https://voteview.com/}
 }
 \usage{
 senate114
 }
 \description{
-This rollcall vote object (see \code{\link[pscl]{rollcall}}) contains voting records for the 114th Senate in the US
+This rollcall vote object (see \code{\link[pscl:rollcall]{pscl::rollcall()}}) contains voting records for the 114th Senate in the US
 Congress. Not all rollcalls are included, only those that had a 70-30 or closer split in the vote.
-The data can be pre-processed via the \code{\link{id_make}} function for estimation. 
+The data can be pre-processed via the \code{\link[=id_make]{id_make()}} function for estimation.
 See package vignette for details.
 }
 \keyword{datasets}

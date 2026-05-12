@@ -2,16 +2,34 @@
 % Please edit documentation in R/Plot.R
 \name{id_plot_legis_dyn}
 \alias{id_plot_legis_dyn}
-\title{Function to plot dynamic ideal point models}
+\title{Plot Dynamic Person Ideal Points (Deprecated)}
 \usage{
-id_plot_legis_dyn(object, return_data = FALSE, include = NULL,
-  item_plot = NULL, text_size_label = 2, text_size_group = 2.5,
-  high_limit = 0.95, low_limit = 0.05, line_size = 1,
-  highlight = NULL, plot_text = TRUE, use_ci = TRUE,
-  person_line_alpha = 0.3, person_ci_alpha = 0.8,
-  item_plot_type = "non-inflated", show_true = FALSE,
-  group_color = TRUE, hpd_limit = 10, sample_persons = NULL,
-  plot_sim = FALSE, ...)
+id_plot_legis_dyn(
+  object,
+  return_data = FALSE,
+  include = NULL,
+  item_plot = NULL,
+  text_size_label = 2,
+  text_size_group = 2.5,
+  high_limit = 0.95,
+  low_limit = 0.05,
+  line_size = 1,
+  highlight = NULL,
+  plot_text = TRUE,
+  use_ci = TRUE,
+  plot_lines = 0,
+  draw_line_alpha = 0.5,
+  person_line_alpha = 0.3,
+  person_ci_alpha = 0.8,
+  item_plot_type = "non-inflated",
+  show_true = FALSE,
+  group_color = TRUE,
+  hpd_limit = 10,
+  sample_persons = NULL,
+  use_chain = NULL,
+  add_cov = TRUE,
+  ...
+)
 }
 \arguments{
 \item{object}{A fitted \code{idealstan} object or a named list of \code{idealstan}
@@ -28,10 +46,10 @@ models (see Time Series vignette)}
 
 \item{text_size_group}{ggplot2 text size for group text used for points}
 
-\item{high_limit}{A number between 0 and 1 showing the upper limit to compute the 
+\item{high_limit}{A number between 0 and 1 showing the upper limit to compute the
 posterior uncertainty interval (defaults to 0.95).}
 
-\item{low_limit}{A number between 0 and 1 showing the lower limit to compute the 
+\item{low_limit}{A number between 0 and 1 showing the lower limit to compute the
 posterior uncertainty interval (defaults to 0.05).}
 
 \item{line_size}{Sets the size of the line of the time-varying ideal points.}
@@ -43,13 +61,20 @@ posterior uncertainty interval (defaults to 0.05).}
 \item{use_ci}{Whether or not high-posterior density intervals (credible intervals) should be
 plotted over the estimates (turn off if the plot is too busy)}
 
+\item{plot_lines}{The number of lines of actual draws of time-varying ideal points
+to draw on the plot. Note that these are grouped by persons. Specific draws selected at random
+from total number of draws of the estimation. Default is 0.}
+
+\item{draw_line_alpha}{The opacity of lines plotted over the distribution (should be
+between 0 and 1, default is 0.5).}
+
 \item{person_line_alpha}{The transparency level of the time-varying ideal point line}
 
 \item{person_ci_alpha}{The transparency level of ribbon confidence interval around the time-varying ideal points}
 
-\item{item_plot_type}{Whether to show the \code{'non-inflated'} item/bill midpoints, 
-the \code{'inflated'} item/bill midpoints, or produce plots for \code{'both'} kinds of models. 
-Defaults to \code{'non-inflated'} and will only display an item/bill midpoint if one has been 
+\item{item_plot_type}{Whether to show the \code{'non-inflated'} item/bill midpoints,
+the \code{'inflated'} item/bill midpoints, or produce plots for \code{'both'} kinds of models.
+Defaults to \code{'non-inflated'} and will only display an item/bill midpoint if one has been
 specified in \code{item_plot}.}
 
 \item{show_true}{Whether to show the true values of the legislators (if model has been simulated)}
@@ -59,55 +84,24 @@ specified in \code{item_plot}.}
 \item{hpd_limit}{The greatest absolute difference in high-posterior density interval shown for any point. Useful for excluding imprecisely estimated persons/legislators from the plot. Leave NULL if you don't want to exclude any.}
 
 \item{sample_persons}{If you don't want to use the full number of persons/legislators from the model, enter a proportion (between 0 and 1) to select
-only a fraction of the persons/legislators.}
+only a fraction of the persons/legislators.
+(see \code{\link[=id_sim_gen]{id_sim_gen()}})}
 
-\item{plot_sim}{Whether to plot the true values of parameters if a simulation was used to generate data 
-(see \code{\link{id_sim_gen}})}
+\item{use_chain}{ID of MCMC chain to use rather than combining all chains.
+Default is NULL which will use all chains and is recommended.}
+
+\item{add_cov}{Whether to add values of hierarchical person-level covariates to the
+time trends (defaults to TRUE).}
 
 \item{...}{Other options passed on to plotting function, currently ignored}
 }
+\value{
+A \code{ggplot2} object showing dynamic legislator/person ideal points over time. Deprecated;
+use \code{\link{id_plot_persons_dyn}} instead.
+}
 \description{
-This function can be used on a fitted \code{idealstan} object to plot the relative positions and 
-uncertainties of legislator/persons and bills/items when the legislator/person ideal points
-are allowed to vary over time.
+\ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#deprecated}{\figure{lifecycle-deprecated.svg}{options: alt='[Deprecated]'}}}{\strong{[Deprecated]}}
+
+\code{id_plot_legis_dyn()} was renamed to \code{\link[=id_plot_persons_dyn]{id_plot_persons_dyn()}} for clarity and consistency.
 }
-\details{
-This plot shows the distribution of ideal points for the legislators/persons in the model,
-and also traces the path of these ideal points over time. It will plot them as a vertical
-line with associated high-density posterior interval (10\% to 90\%). In addition, if the column index for a 
-bill/item from the response matrix is passed to the \code{item_plot} option, then an item/bill midpoint will be overlain
-on the ideal point plot, showing the point at which legislators/persons are indifferent to voting/answering on the 
-bill/item. Note that because this is an ideal point model, it is not possible to tell from the midpoint itself
-which side will be voting which way. For that reason, the legislators/persons are colored by their votes/scores to
-make it clear.
-}
-\examples{
-
-\dontrun{
-
-# First create data and run a model
-
-to_idealstan <-   id_make(score_data = senate114,
-outcome = 'cast_code',
-person_id = 'bioname',
-item_id = 'rollnumber',
-group_id= 'party_code',
-time_id='date',
-high_val='Yes',
-low_val='No',
-miss_val='Absent')
-
-sen_est <- id_estimate(senate_data,
-model_type = 2,
-use_vb = TRUE,
-vary_ideal_pts='random_walk',
-fixtype='vb_partial',
-restrict_ind_high = "BARRASSO, John A.",
-restrict_ind_low = "WARREN, Elizabeth")
-
-# After running the model, we can plot 
-# the results of the person/legislator ideal points
-
-id_plot_legis_dyn(sen_est)
-}
-}
+\keyword{internal}

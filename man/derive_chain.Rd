@@ -2,18 +2,33 @@
 % Please edit documentation in R/rstan_generics.R
 \name{derive_chain}
 \alias{derive_chain}
-\title{Helper Function for `loo` calculation}
+\title{Helper Function for \code{loo} calculation}
 \usage{
 derive_chain(ll_matrix = NULL)
 }
 \arguments{
-\item{ll_matrix}{A log-likelihood matrix as produced by the \code{\link{id_post_pred}}
+\item{ll_matrix}{A log-likelihood matrix as produced by the \code{\link[=id_post_pred]{id_post_pred()}}
 function}
 }
+\value{
+An integer vector of MCMC chain IDs extracted from the log-likelihood matrix, for use as the
+\code{chain_id} argument to \code{\link[loo]{relative_eff}}.
+}
 \description{
-This function accepts a log-likelihood matrix produced by `id_post_pred` and 
+This function accepts a log-likelihood matrix produced by \code{id_post_pred} and
 extracts the IDs of the MCMC chains. It is necessary to use this function
-as the second argument to the `loo` function along with an exponentiated 
-log-likelihood matrix. See the package vignette How to Evaluate Models 
+as the second argument to the \code{loo} function along with an exponentiated
+log-likelihood matrix. See the package vignette How to Evaluate Models
 for more details.
+}
+\examples{
+\donttest{
+sim <- id_sim_gen()
+est <- id_estimate(sim, model_type=1, fixtype='vb_full',
+                   use_method="pathfinder", nchains=2, ncores=2)
+ll <- id_post_pred(est, type='log_lik')
+chain_ids <- derive_chain(ll)
+# use with loo
+loo::loo(exp(ll), r_eff=loo::relative_eff(exp(ll), chain_id=chain_ids))
+}
 }
